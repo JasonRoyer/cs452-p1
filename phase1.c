@@ -99,6 +99,15 @@ void finish(int argc, char **argv)
   USLOSS_Console("Goodbye.\n");
 } /* End of finish */
 
+
+int getNewPid()
+{
+  // finds the first available PID used by fork to find pid for new process
+  int i = 1;
+  while (procTable[i] != NULL) { i++; if (i > P1_MAXPROC) {return 0;}}
+  return i;
+}
+
 /* ------------------------------------------------------------------------
    Name - P1_Fork
    Purpose - Gets a new process from the process table and initializes
@@ -112,11 +121,17 @@ void finish(int argc, char **argv)
    ------------------------------------------------------------------------ */
 int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority, int tag)
 {
-    int newPid = 0;
-    /* newPid = pid of empty PCB here */
+    // first lets do some checks. 
+
+    int newPid = getNewPid();
+    if (newPid == 0) { return -1; }
+    newPid = getNewPid();
     procTable[newPid].startFunc = f;
     procTable[newPid].startArg = arg;
     // more stuff here, e.g. allocate stack, page table, initialize context, etc.
+    char * stack = malloc(stacksize*sizeof(char)); // allocating stack
+
+      
     return newPid;
 } /* End of fork */
 
