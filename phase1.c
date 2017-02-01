@@ -17,6 +17,7 @@ typedef struct PCB {
     USLOSS_Context      context;
     int                 (*startFunc)(void *);   /* Starting function */
     void                 *startArg;             /* Arg to starting function */
+    int                  priority; 
 } PCB;
 
 
