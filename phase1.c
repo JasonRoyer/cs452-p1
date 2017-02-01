@@ -17,7 +17,8 @@ typedef struct PCB {
     USLOSS_Context      context;
     int                 (*startFunc)(void *);   /* Starting function */
     void                 *startArg;             /* Arg to starting function */
-    int                  priority; 
+    int                  priority;
+    int                  tag; 
 } PCB;
 
 
@@ -123,16 +124,22 @@ int getNewPid()
 int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority, int tag)
 {
     // first lets do some checks. 
-
+    // make sure the parameters are valid. 
     int newPid = getNewPid();
     if (newPid == 0) { return -1; }
-    newPid = getNewPid();
+    if (stacksize < USLOSS_MIN_STACK) { return -2; }
+    if (priority < 1 || priority > 10) { return -3;} // right now assuming priority betwen 1:10 (inclusive)
+    if (tag != 0 && tag != 1) { return -4; }
+    
     procTable[newPid].startFunc = f;
     procTable[newPid].startArg = arg;
+    procTable[newPid].priority = priority;
+    procTable[newPid].tag = tag;
+    // now we initialize the context. 
     // more stuff here, e.g. allocate stack, page table, initialize context, etc.
     char * stack = malloc(stacksize*sizeof(char)); // allocating stack
-
-      
+    USLOSS_PTE pt = P3_AllocatePageTable(newPid);
+    USLOSS_ContextInit(USLOSS_Context procTable[newPid].context, stack, stacksize, pt, f);
     return newPid;
 } /* End of fork */
 
