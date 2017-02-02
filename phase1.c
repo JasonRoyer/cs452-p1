@@ -18,7 +18,8 @@ typedef struct PCB {
     int                 (*startFunc)(void *);   /* Starting function */
     void                 *startArg;             /* Arg to starting function */
     int                  priority;
-    int                  tag; 
+    int                  tag;
+    int                  ppid;  // parent pid 
 } PCB;
 
 
@@ -128,19 +129,20 @@ int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority
     int newPid = getNewPid();
     if (newPid == 0) { return -1; }
     if (stacksize < USLOSS_MIN_STACK) { return -2; }
-    if (priority < 1 || priority > 10) { return -3;} // right now assuming priority betwen 1:10 (inclusive)
+    if (priority < 1 || priority > 5) { return -3;} 
     if (tag != 0 && tag != 1) { return -4; }
-    
+    // now we know we have 
     procTable[newPid].startFunc = f;
     procTable[newPid].startArg = arg;
     procTable[newPid].priority = priority;
     procTable[newPid].tag = tag;
+    procTable[newPid].ppid = pid;
     // now we initialize the context. 
     // more stuff here, e.g. allocate stack, page table, initialize context, etc.
     char * stack = malloc(stacksize*sizeof(char)); // allocating stack
     USLOSS_PTE pt = P3_AllocatePageTable(newPid);
     USLOSS_ContextInit(USLOSS_Context procTable[newPid].context, stack, stacksize, pt, f);
-    pid = newPid;
+    dispatcher(); // call the dispatcher. 
     return newPid;
 } /* End of fork */
 
@@ -180,7 +182,7 @@ void P1_Quit(int status) {
 int P1_GetPID(void)
 {
   // returns pid of currently running process.
-
+  return pid;
 }
 
 /* ------------------------------------------------------------------------
@@ -191,10 +193,20 @@ int P1_GetPID(void)
    Side Effects - none
    ------------------------------------------------------------------------ */
 int P1_GetState(int PID) {
-  if (PID > 50 || PID < 1) { return -1;}
-  if (PID = pid) { return 0; }
+  if (PID > 50 || PID < 1) { return -1;}  // invalid PID
+  if (PID = P1_GetPID()) { return 0; }            // process is currently running. 
 
-  return 0;
+  // TODO: the conditions are associated with the return values. 
+  //       implement the condition checks
+  int isReady, isKilled, isQuit, isWait;
+  // TODO: check for ready process
+  if (isReady)   { return 1; }
+  // TODO: check for killed process
+  if (isKilled)  { return 2; }
+  // TODO: check for quit process
+  if (isQuit)    { return 3; }
+  // TODO: check for process waiting on semaphore
+  if (isWait)    { return 4; }
 }
 
 /* ------------------------------------------------------------------------
