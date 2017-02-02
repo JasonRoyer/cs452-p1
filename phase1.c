@@ -140,6 +140,7 @@ int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority
     char * stack = malloc(stacksize*sizeof(char)); // allocating stack
     USLOSS_PTE pt = P3_AllocatePageTable(newPid);
     USLOSS_ContextInit(USLOSS_Context procTable[newPid].context, stack, stacksize, pt, f);
+    pid = newPid;
     return newPid;
 } /* End of fork */
 
@@ -176,6 +177,12 @@ void P1_Quit(int status) {
   // Do something here.
 }
 
+int P1_GetPID(void)
+{
+  // returns pid of currently running process.
+
+}
+
 /* ------------------------------------------------------------------------
    Name - P1_GetState
    Purpose - gets the state of the process
@@ -184,6 +191,9 @@ void P1_Quit(int status) {
    Side Effects - none
    ------------------------------------------------------------------------ */
 int P1_GetState(int PID) {
+  if (PID > 50 || PID < 1) { return -1;}
+  if (PID = pid) { return 0; }
+
   return 0;
 }
 
