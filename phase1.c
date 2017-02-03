@@ -19,7 +19,8 @@ typedef struct PCB {
     void                 *startArg;             /* Arg to starting function */
     int                  priority;
     int                  tag;
-    int                  ppid;  // parent pid 
+    int                  ppid;  // parent pid
+    int                  status; 
 } PCB;
 
 
@@ -36,6 +37,11 @@ int numProcs = 0;
 
 static int sentinel(void *arg);
 static void launch(void);
+
+
+int checkMode() { return USLOSS_PSRGet() && USLOSS_PSR_CURRENT_MODE; }
+
+
 
 /* -------------------------- Functions ----------------------------------- */
 /* ------------------------------------------------------------------------
@@ -54,7 +60,8 @@ void dispatcher()
    */
    int i; for (i = 0; i < P1_MAXPROC ; i++ )
    {
-     if (i < curpid) { USLOSS_ContextSwitch(&procTable[pid].context,&procTable[i].context); break;}
+     if (i < pid) 
+     { USLOSS_ContextSwitch(&procTable[pid].context,&procTable[i].context); pid = i; break;}
    }
    return;
 }
@@ -70,6 +77,7 @@ void startup(int argc, char **argv)
 {
 
   /* initialize the process table here */
+  int i; for(i=0 ; i<P1_MAXPROC ; i++) { procTable[i] = malloc(sizeOf(PCB));}
 
   /* Initialize the Ready list, Blocked list, etc. here */
 
@@ -89,7 +97,6 @@ void startup(int argc, char **argv)
   P1_Fork("P2_Startup", P2_Startup, NULL, 4 * USLOSS_MIN_STACK, 1, 0);
 
   dispatcher();
-
   /* Should never get here (sentinel will call USLOSS_Halt) */
 
   return;
@@ -129,6 +136,7 @@ int getNewPid()
    ------------------------------------------------------------------------ */
 int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority, int tag)
 {
+    if (!checkmode()) {USLOSS_IllegalInstruction();}
     // first lets do some checks. 
     // make sure the parameters are valid. 
     int newPid = getNewPid();
@@ -182,11 +190,14 @@ void launch(void)
    ------------------------------------------------------------------------ */
 void P1_Quit(int status) {
   // Do something here.
+  if (!checkmode()) {USLOSS_IllegalInstruction();}
+  dispatcher();
 }
 
 int P1_GetPID(void)
 {
   // returns pid of currently running process.
+  if (!checkmode()) {USLOSS_IllegalInstruction();}
 
   return pid;
 }
@@ -199,6 +210,7 @@ int P1_GetPID(void)
    Side Effects - none
    ------------------------------------------------------------------------ */
 int P1_GetState(int PID) {
+  if (!checkmode()) {USLOSS_IllegalInstruction();}
   if (PID > 50 || PID < 1) { return -1;}  // invalid PID
   if (PID = P1_GetPID()) { return 0; }            // process is currently running. 
 
@@ -213,6 +225,12 @@ int P1_GetState(int PID) {
   if (isQuit)    { return 3; }
   // TODO: check for process waiting on semaphore
   if (isWait)    { return 4; }
+}
+
+void P1_DumpProcesses(void)
+{
+
+  if (!checkmode()) {USLOSS_IllegalInstruction();}
 }
 
 /* ------------------------------------------------------------------------
