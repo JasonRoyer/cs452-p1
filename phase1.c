@@ -52,6 +52,11 @@ void dispatcher()
    * Run the highest priority runnable process. There is guaranteed to be one
    * because the sentinel is always runnable.
    */
+   int i; for (i = 0; i < P1_MAXPROC ; i++ )
+   {
+     if (i < curpid) { USLOSS_ContextSwitch(&procTable[pid].context,&procTable[i].context); break;}
+   }
+   return;
 }
 /* ------------------------------------------------------------------------
    Name - startup
@@ -182,6 +187,7 @@ void P1_Quit(int status) {
 int P1_GetPID(void)
 {
   // returns pid of currently running process.
+
   return pid;
 }
 
