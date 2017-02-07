@@ -305,7 +305,7 @@ int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority
 	USLOSS_ContextInit(&procTable[newPid].context, stack, stacksize, pt, wrapperFunc);
 	pq_push(procQueue,newPid,priority);
   if (priority < procTable[pid].priority) { 
-		pq_push(procQueue,pid,priority);
+		pq_push(procQueue,pid,procTable[pid].priority);
 		dispatcher(); }
   return newPid;
 } /* End of fork */
