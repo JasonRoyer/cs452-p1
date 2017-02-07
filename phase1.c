@@ -13,6 +13,7 @@
 
 /* -------------------------- Globals ------------------------------------- */
 
+
 typedef struct PCB {
     USLOSS_Context      context;
     int                 (*startFunc)(void *);   /* Starting function */
@@ -22,6 +23,47 @@ typedef struct PCB {
     int                  ppid;  // parent pid
     int                  status; 
 } PCB;
+
+
+
+/* Here is a simple priority queue to be used by the dispatcher. 
+ */
+typedef struct p_node
+{
+  int pid;
+  int priority;
+  struct p_node * next;
+} p_node;
+
+typedef struct priority_queue
+{
+  p_node * head;
+
+} priority_queue;
+
+
+priority_queue * pq_create()
+{
+  priority_queue * retq =  malloc(sizeof(priority_queue));
+  retq->head = NULL;
+  return retq;
+}
+
+void pq_push(priority_queue * pq, PCB pcb)
+{
+  p_node new = malloc(sizeof(p_node));
+
+} 
+
+int pq_pop(priority_queue * pq)
+{
+  if (pq->head == NULL) { return 0; }
+  int retVal = pq->head->pid;
+  pq->head = pq->head->next;
+  return retVal;
+}
+
+
 
 
 /* the process table */
