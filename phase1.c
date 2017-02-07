@@ -106,10 +106,10 @@ int pq_pop(priority_queue * pq)
 void pq_print(priority_queue * pq){
 	p_node * curr = pq-> head;
 	while(curr != NULL){
-		printf("%d : ",curr->pid);
+		//printf("%d : ",curr->pid);
 		curr = curr->next;
 	}
-	printf("\n");
+	//printf("\n");
 }
 
 void pq_remove(priority_queue * pq, int thePID){
@@ -186,7 +186,7 @@ void dispatcher()
    pq_print(procQueue);
   int oldPID = pid;
   pid = pq_pop(procQueue);
-  printf("Dispatcher switched PID from:%d to %d\n", oldPID,pid);
+  //printf("Dispatcher switched PID from:%d to %d\n", oldPID,pid);
   USLOSS_ContextSwitch(&procTable[oldPID].context,&procTable[pid].context);
 }
 
@@ -229,7 +229,7 @@ void startup(int argc, char **argv)
    * it will call P1_Halt because it is the only running process.
    */
    
-   printf("Stated up\n");
+   //printf("Stated up\n");
    P1_Fork("sentinel", sentinel, NULL, USLOSS_MIN_STACK, 6, 0);
 
   /* start the P2_Startup process */
@@ -288,7 +288,7 @@ int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority
 		return -4;
 	}
 	
-	printf("forked %s with PID %d\n", name,newPid);
+	//printf("forked %s with PID %d\n", name,newPid);
 	// TODO: procTable[pid].child = newPid something like this to keep track of children may need later
 	numProcs++;
   procTable[newPid].startFunc = f;
@@ -304,7 +304,9 @@ int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority
   USLOSS_PTE *pt = P3_AllocatePageTable(newPid);
 	USLOSS_ContextInit(&procTable[newPid].context, stack, stacksize, pt, wrapperFunc);
 	pq_push(procQueue,newPid,priority);
-  if (priority < procTable[pid].priority) { dispatcher(); }
+  if (priority < procTable[pid].priority) { 
+		pq_push(procQueue,pid,priority);
+		dispatcher(); }
   return newPid;
 } /* End of fork */
 
@@ -318,7 +320,7 @@ int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority
    ------------------------------------------------------------------------ */
 void launch(void)
 {
-	printf("launched\n");
+	//printf("launched\n");
   int  rc;
   int  status;
   status = USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT);
@@ -344,7 +346,7 @@ void P1_Quit(int status) {
   // TODO: update as things get added to PCB
   // remove from Q this happens right now because of launch
   pq_remove(procQueue, pid);
-  printf("Quitting PID %d\n", pid);
+  //printf("Quitting PID %d\n", pid);
   numProcs--;
   procTable[pid].state =3;
  // memset(&procTable[pid],0,sizeof(PCB));
@@ -381,7 +383,7 @@ int sentinel (void *notused)
     while (numProcs > 1)
     {
         /* Check for deadlock here */
-		printf("running sent %d\n",numProcs);
+		//printf("running sent %d\n",numProcs);
         USLOSS_WaitInt();
 		dispatcher();
 		// may not need to call dispatcher here? we will see
