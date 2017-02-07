@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include "usloss.h"
 #include "phase1.h"
+#include <string.h>
 
 /* -------------------------- Globals ------------------------------------- */
 
@@ -23,6 +24,7 @@ typedef struct PCB {
 	int	state; // the state of the process IE  running, ready to run, not used, quit, is waiting. 
 	int priority;
 	int tag;
+	int isUsed;
 } PCB;
 
 
@@ -69,10 +71,26 @@ void pq_push(priority_queue * pq, int pid, int priority)
   if (pq->head == NULL) {pq->head = new;}
   else
   {
-    p_node * curr = pq->head;
-    while (new->priority > curr->priority) { curr = curr->next; }
-    new -> next = curr->next;
-    curr->next = new;
+	  p_node * curr = pq->head;
+	 if(new->priority < curr->priority){
+		// insert at head
+		new->next = pq->head;
+		pq->head = new;
+	}else {
+		// insert after head
+		while (curr->next != NULL) {
+			if(new->priority > curr->next->priority){
+				curr = curr->next;
+			}else {
+				// insert it after curr
+				new->next = curr->next;
+				curr->next = new;
+				return;
+			}
+			
+		}
+	}
+	
   }
   return;
 } 
@@ -85,6 +103,31 @@ int pq_pop(priority_queue * pq)
   return retVal;
 }
 
+void pq_print(priority_queue * pq){
+	p_node * curr = pq-> head;
+	while(curr != NULL){
+		printf("%d : ",curr->pid);
+		curr = curr->next;
+	}
+	printf("\n");
+}
+
+void pq_remove(priority_queue * pq, int thePID){
+	if (pq->head->pid == thePID){
+		pq->head = pq->head->next;
+	}else {
+		 p_node * curr = pq->head;
+		while (curr->next != NULL) {
+			if(curr->next->pid == thePID){
+				curr->next = curr->next->next;
+				return;
+			}else {
+				curr = curr->next;
+			}
+			
+		}
+	}
+}
 
 
 
@@ -113,7 +156,7 @@ int getNewPid()
   // finds the first available PID used by fork to find pid for new process
   
   for(int i=0; i < 50; i++){
-	  if(procTable[i].state == 2){
+	  if(procTable[i].isUsed == 0){
 		  // 2 is the state for not used
 		  return i;
 	  }
@@ -140,6 +183,7 @@ void dispatcher()
    * Run the highest priority runnable process. There is guaranteed to be one
    * because the sentinel is always runnable.
    */
+   pq_print(procQueue);
   int oldPID = pid;
   pid = pq_pop(procQueue);
   printf("Dispatcher switched PID from:%d to %d\n", oldPID,pid);
@@ -167,9 +211,9 @@ void startup(int argc, char **argv)
   procQueue = pq_create();
 
   /* initialize the process table here */
-	for(int i=0; i < 50; i++){
-		procTable[i].state = 2;
-	  }
+	//for(int i=0; i < 50; i++){
+	//	procTable[i].state = 2;
+	//  }
   
   /* Initialize the Ready list, Blocked list, etc. here */
 
@@ -250,6 +294,7 @@ int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority
   procTable[newPid].startFunc = f;
   procTable[newPid].startArg = arg;
 	procTable[newPid].state = 1;
+	procTable[newPid].isUsed = 1;
 	procTable[newPid].priority = priority;
   procTable[newPid].tag = tag;
 	
@@ -297,13 +342,13 @@ void P1_Quit(int status) {
   if (!checkMode()) {USLOSS_IllegalInstruction();}
   // clean up current PID
   // TODO: update as things get added to PCB
+  // remove from Q this happens right now because of launch
+  pq_remove(procQueue, pid);
   printf("Quitting PID %d\n", pid);
   numProcs--;
-  procTable[pid].startFunc = NULL;
-  procTable[pid].startArg = NULL;
-  procTable[pid].state = 2;
-  procTable[pid].priority = 6;
-  procTable[pid].tag = 0;
+  procTable[pid].state =3;
+ // memset(&procTable[pid],0,sizeof(PCB));
+  //procTable[pid].state = 2;
 }
 
 /* ------------------------------------------------------------------------
@@ -336,8 +381,9 @@ int sentinel (void *notused)
     while (numProcs > 1)
     {
         /* Check for deadlock here */
+		printf("running sent %d\n",numProcs);
         USLOSS_WaitInt();
-		//dispatcher();
+		dispatcher();
 		// may not need to call dispatcher here? we will see
 		
     }
