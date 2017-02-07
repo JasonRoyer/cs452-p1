@@ -44,15 +44,36 @@ typedef struct priority_queue
 
 priority_queue * pq_create()
 {
+  // creates and returns a priority queue struct. 
   priority_queue * retq =  malloc(sizeof(priority_queue));
   retq->head = NULL;
   return retq;
 }
 
-void pq_push(priority_queue * pq, PCB pcb)
+void pq_push(priority_queue * pq, int pid, int priority)
 {
-  p_node new = malloc(sizeof(p_node));
+  // THis function takes a pointer to the priority queue
+  // and integers representing the pid and priority
+  // creates and pushes the new value on our queue. 
 
+  // create the new node. 
+  p_node * new = malloc(sizeof(p_node));
+  new -> pid = pid;
+  new -> priority = priority;
+  new -> next = NULL;
+
+  // now we insert it into the queue. 
+  // high priority is closer to the head. 
+  // head node is the highest priority. 
+  if (pq->head == NULL) {pq->head = new;}
+  else
+  {
+    p_node * curr = head;
+    while (new->priority > curr->priority) { curr = curr->next; }
+    new -> next = curr->next;
+    curr->next = new;
+  }
+  return;
 } 
 
 int pq_pop(priority_queue * pq)
