@@ -8,6 +8,8 @@
    ------------------------------------------------------------------------ */
 
 #include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include "usloss.h"
 #include "phase1.h"
 
@@ -18,10 +20,9 @@ typedef struct PCB {
     USLOSS_Context      context;
     int                 (*startFunc)(void *);   /* Starting function */
     void                 *startArg;             /* Arg to starting function */
-    int                  priority;
-    int                  tag;
-    int                  ppid;  // parent pid
-    int                  status; 
+	int	state; // the state of the process IE  running, ready to run, not used, quit, is waiting. 
+	int priority;
+	int tag;
 } PCB;
 
 
@@ -101,8 +102,24 @@ int numProcs = 0;
 static int sentinel(void *arg);
 static void launch(void);
 
-
-int checkMode() { return USLOSS_PSRGet() && USLOSS_PSR_CURRENT_MODE; }
+int checkMode() {
+	return USLOSS_PsrGet() && USLOSS_PSR_CURRENT_MODE;
+	}
+	
+int getNewPid()
+{
+  // finds the first available PID used by fork to find pid for new process
+  
+  for(int i=0; i < 50; i++){
+	  if(procTable[i].state == 2){
+		  // 2 is the state for not used
+		  return i;
+	  }
+  }
+  // 50 processes have run if it reaches here. 
+  // so return -1 and deal with it later
+  return -1;
+}
 
 
 
@@ -121,13 +138,18 @@ void dispatcher()
    * Run the highest priority runnable process. There is guaranteed to be one
    * because the sentinel is always runnable.
    */
-   int i; for (i = 0; i < P1_MAXPROC ; i++ )
-   {
-     if (i < pid) 
-     { USLOSS_ContextSwitch(&procTable[pid].context,&procTable[i].context); pid = i; break;}
-   }
-   return;
+   int oldPID = pid;
+  // pid = pop();
+  printf("Dispatcher switched PID from:%d to %d\n", oldPID,pid);
+   USLOSS_ContextSwitch(&procTable[oldPID].context,&procTable[pid].context);
 }
+
+void wraperFunc(){
+	// change this argument
+	P1_Quit(procTable[pid].startFunc((procTable[pid].startArg)));
+	dispatcher();
+}
+
 /* ------------------------------------------------------------------------
    Name - startup
    Purpose - Initializes semaphores, process lists and interrupt vector.
@@ -140,8 +162,10 @@ void startup(int argc, char **argv)
 {
 
   /* initialize the process table here */
-  int i; for(i=0 ; i<P1_MAXPROC ; i++) { procTable[i] = malloc(sizeOf(PCB));}
-
+	for(int i=0; i < 50; i++){
+		procTable[i].state = 2;
+	  }
+  
   /* Initialize the Ready list, Blocked list, etc. here */
 
   /* Initialize the interrupt vector here */
@@ -150,16 +174,21 @@ void startup(int argc, char **argv)
 
   /* startup a sentinel process */
   /* HINT: you don't want any forked processes to run until startup is finished.
+  
    * You'll need to do something  to prevent that from happening.
    * Otherwise your sentinel will start running as soon as you fork it and 
    * it will call P1_Halt because it is the only running process.
    */
-  P1_Fork("sentinel", sentinel, NULL, USLOSS_MIN_STACK, 6, 0);
+   
+   printf("Stated up\n");
+   P1_Fork("sentinel", sentinel, NULL, USLOSS_MIN_STACK, 6, 0);
 
   /* start the P2_Startup process */
-  P1_Fork("P2_Startup", P2_Startup, NULL, 4 * USLOSS_MIN_STACK, 1, 0);
+  pid = P1_Fork("P2_Startup", P2_Startup, NULL, 4 * USLOSS_MIN_STACK, 1, 0);
 
+	launch();
   dispatcher();
+
   /* Should never get here (sentinel will call USLOSS_Halt) */
 
   return;
@@ -177,15 +206,6 @@ void finish(int argc, char **argv)
   USLOSS_Console("Goodbye.\n");
 } /* End of finish */
 
-
-int getNewPid()
-{
-  // finds the first available PID used by fork to find pid for new process
-  int i = 1;
-  while (procTable[i] != NULL) { i++; if (i > P1_MAXPROC) {return 0;}}
-  return i;
-}
-
 /* ------------------------------------------------------------------------
    Name - P1_Fork
    Purpose - Gets a new process from the process table and initializes
@@ -199,26 +219,42 @@ int getNewPid()
    ------------------------------------------------------------------------ */
 int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority, int tag)
 {
-    if (!checkmode()) {USLOSS_IllegalInstruction();}
-    // first lets do some checks. 
-    // make sure the parameters are valid. 
+	// check input peramaters
+	if (!checkMode()){
+		USLOSS_IllegalInstruction();
+	}	
+	
     int newPid = getNewPid();
-    if (newPid == 0) { return -1; }
-    if (stacksize < USLOSS_MIN_STACK) { return -2; }
-    if (priority < 1 || priority > 5) { return -3;} 
-    if (tag != 0 && tag != 1) { return -4; }
-    // now we know we have 
+	if(newPid == -1){
+		// we already have 50 process do something
+		return -1;
+	}
+	if(stacksize < USLOSS_MIN_STACK){
+		return -2;
+	}
+	if(priority < 0 || priority > 6){
+		return -3;
+	}
+	if (tag != 0 && tag !=1){
+		return -4;
+	}
+	
+	printf("forked %s with PID %d\n", name,newPid);
+	// TODO: procTable[pid].child = newPid something like this to keep track of children may need later
+	numProcs++;
     procTable[newPid].startFunc = f;
     procTable[newPid].startArg = arg;
-    procTable[newPid].priority = priority;
+	procTable[newPid].state = 1;
+	procTable[newPid].priority = priority;
     procTable[newPid].tag = tag;
-    procTable[newPid].ppid = pid;
-    // now we initialize the context. 
+	
+	
     // more stuff here, e.g. allocate stack, page table, initialize context, etc.
-    char * stack = malloc(stacksize*sizeof(char)); // allocating stack
-    USLOSS_PTE pt = P3_AllocatePageTable(newPid);
-    USLOSS_ContextInit(USLOSS_Context procTable[newPid].context, stack, stacksize, pt, f);
-    dispatcher(); // call the dispatcher. 
+	char * stack = malloc(stacksize*sizeof(char)); // allocating stack
+    USLOSS_PTE *pt = P3_AllocatePageTable(newPid);
+	USLOSS_ContextInit(&procTable[newPid].context, stack, stacksize, pt, wraperFunc);
+	// push();
+	
     return newPid;
 } /* End of fork */
 
@@ -232,6 +268,7 @@ int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority
    ------------------------------------------------------------------------ */
 void launch(void)
 {
+	printf("launched\n");
   int  rc;
   int  status;
   status = USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT);
@@ -252,17 +289,16 @@ void launch(void)
    Side Effects - the currently running process quits
    ------------------------------------------------------------------------ */
 void P1_Quit(int status) {
-  // Do something here.
-  if (!checkmode()) {USLOSS_IllegalInstruction();}
-  dispatcher();
-}
-
-int P1_GetPID(void)
-{
-  // returns pid of currently running process.
-  if (!checkmode()) {USLOSS_IllegalInstruction();}
-
-  return pid;
+  if (!checkMode()) {USLOSS_IllegalInstruction();}
+  // clean up current PID
+  // TODO: update as things get added to PCB
+  printf("Quitting PID %d\n", pid);
+  numProcs--;
+  procTable[pid].startFunc = NULL;
+  procTable[pid].startArg = NULL;
+  procTable[pid].state = 2;
+  procTable[pid].priority = 6;
+  procTable[pid].tag = 0;
 }
 
 /* ------------------------------------------------------------------------
@@ -273,27 +309,10 @@ int P1_GetPID(void)
    Side Effects - none
    ------------------------------------------------------------------------ */
 int P1_GetState(int PID) {
-  if (!checkmode()) {USLOSS_IllegalInstruction();}
-  if (PID > 50 || PID < 1) { return -1;}  // invalid PID
-  if (PID = P1_GetPID()) { return 0; }            // process is currently running. 
-
-  // TODO: the conditions are associated with the return values. 
-  //       implement the condition checks
-  int isReady, isKilled, isQuit, isWait;
-  // TODO: check for ready process
-  if (isReady)   { return 1; }
-  // TODO: check for killed process
-  if (isKilled)  { return 2; }
-  // TODO: check for quit process
-  if (isQuit)    { return 3; }
-  // TODO: check for process waiting on semaphore
-  if (isWait)    { return 4; }
-}
-
-void P1_DumpProcesses(void)
-{
-
-  if (!checkmode()) {USLOSS_IllegalInstruction();}
+	if(PID < 0 || PID > 49){
+		return -1;
+	}
+  return procTable[PID].state;
 }
 
 /* ------------------------------------------------------------------------
@@ -313,6 +332,9 @@ int sentinel (void *notused)
     {
         /* Check for deadlock here */
         USLOSS_WaitInt();
+		dispatcher();
+		// may not need to call dispatcher here? we will see
+		
     }
     USLOSS_Halt(0);
     /* Never gets here. */
