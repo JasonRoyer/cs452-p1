@@ -140,13 +140,13 @@ void dispatcher()
    * Run the highest priority runnable process. There is guaranteed to be one
    * because the sentinel is always runnable.
    */
-   int oldPID = pid;
+  int oldPID = pid;
   pid = pq_pop(procQueue);
   printf("Dispatcher switched PID from:%d to %d\n", oldPID,pid);
-   USLOSS_ContextSwitch(&procTable[oldPID].context,&procTable[pid].context);
+  USLOSS_ContextSwitch(&procTable[oldPID].context,&procTable[pid].context);
 }
 
-void wraperFunc(){
+void wrapperFunc(){
 	// change this argument
 	P1_Quit(procTable[pid].startFunc((procTable[pid].startArg)));
 	dispatcher();
@@ -247,20 +247,20 @@ int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority
 	printf("forked %s with PID %d\n", name,newPid);
 	// TODO: procTable[pid].child = newPid something like this to keep track of children may need later
 	numProcs++;
-    procTable[newPid].startFunc = f;
-    procTable[newPid].startArg = arg;
+  procTable[newPid].startFunc = f;
+  procTable[newPid].startArg = arg;
 	procTable[newPid].state = 1;
 	procTable[newPid].priority = priority;
-    procTable[newPid].tag = tag;
+  procTable[newPid].tag = tag;
 	
 	
     // more stuff here, e.g. allocate stack, page table, initialize context, etc.
 	char * stack = malloc(stacksize*sizeof(char)); // allocating stack
-    USLOSS_PTE *pt = P3_AllocatePageTable(newPid);
-	USLOSS_ContextInit(&procTable[newPid].context, stack, stacksize, pt, wraperFunc);
+  USLOSS_PTE *pt = P3_AllocatePageTable(newPid);
+	USLOSS_ContextInit(&procTable[newPid].context, stack, stacksize, pt, wrapperFunc);
 	pq_push(procQueue,newPid,priority);
-	
-    return newPid;
+  if (priority < procTable[pid].priority) { dispatcher(); }
+  return newPid;
 } /* End of fork */
 
 /* ------------------------------------------------------------------------
@@ -337,7 +337,7 @@ int sentinel (void *notused)
     {
         /* Check for deadlock here */
         USLOSS_WaitInt();
-		dispatcher();
+		//dispatcher();
 		// may not need to call dispatcher here? we will see
 		
     }
