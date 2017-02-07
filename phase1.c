@@ -69,7 +69,7 @@ void pq_push(priority_queue * pq, int pid, int priority)
   if (pq->head == NULL) {pq->head = new;}
   else
   {
-    p_node * curr = head;
+    p_node * curr = pq->head;
     while (new->priority > curr->priority) { curr = curr->next; }
     new -> next = curr->next;
     curr->next = new;
@@ -91,6 +91,8 @@ int pq_pop(priority_queue * pq)
 /* the process table */
 PCB procTable[P1_MAXPROC];
 
+// the priority queue
+priority_queue * procQueue;
 
 /* current process ID */
 int pid = -1;
@@ -139,7 +141,7 @@ void dispatcher()
    * because the sentinel is always runnable.
    */
    int oldPID = pid;
-  // pid = pop();
+  pid = pq_pop(procQueue);
   printf("Dispatcher switched PID from:%d to %d\n", oldPID,pid);
    USLOSS_ContextSwitch(&procTable[oldPID].context,&procTable[pid].context);
 }
@@ -160,6 +162,9 @@ void wraperFunc(){
    ----------------------------------------------------------------------- */
 void startup(int argc, char **argv)
 {
+  
+  // initializing process queue
+  procQueue = pq_create();
 
   /* initialize the process table here */
 	for(int i=0; i < 50; i++){
@@ -253,7 +258,7 @@ int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority
 	char * stack = malloc(stacksize*sizeof(char)); // allocating stack
     USLOSS_PTE *pt = P3_AllocatePageTable(newPid);
 	USLOSS_ContextInit(&procTable[newPid].context, stack, stacksize, pt, wraperFunc);
-	// push();
+	pq_push(procQueue,newPid,priority);
 	
     return newPid;
 } /* End of fork */
