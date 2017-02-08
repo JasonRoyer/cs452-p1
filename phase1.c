@@ -54,6 +54,8 @@ priority_queue * pq_create()
   return retq;
 }
 
+
+/* and here are some associated functions to help us use the queue */
 void pq_push(priority_queue * pq, int pid, int priority)
 {
   // THis function takes a pointer to the priority queue
@@ -104,6 +106,8 @@ void pq_push(priority_queue * pq, int pid, int priority)
 
 int pq_pop(priority_queue * pq)
 {
+  // pops the highest priority element from the queue
+  //  and returns the PID
   if (pq->head == NULL) { return 0; }
   int retVal = pq->head->pid;
   pq->head = pq->head->next;
@@ -112,16 +116,20 @@ int pq_pop(priority_queue * pq)
 
 void pq_print(priority_queue * pq)
 {
+  // prints the contents of the priority queue 
+  //  used for debugging
 	p_node * curr = pq-> head;
 	while(curr != NULL)
   {
 		curr = curr->next;
 	}
-	
 }
 
 void pq_remove(priority_queue * pq, int thePID)
 {
+  // removes an element from the queue by PID. 
+  // technically breaches the definition of what a priority queue is, 
+  // but we are the programmers now. 
 	if (pq->head->pid == thePID)
   {
 		pq->head = pq->head->next;
@@ -144,8 +152,6 @@ void pq_remove(priority_queue * pq, int thePID)
 	}
 }
 
-
-
 /* the process table */
 PCB procTable[P1_MAXPROC];
 
@@ -164,6 +170,8 @@ static void launch(void);
 
 int checkMode() 
 {
+  // Returns 1 if kernel mode, 0 if user mode. 
+  // helps us restrict access to our functions. 
 	return USLOSS_PsrGet() && USLOSS_PSR_CURRENT_MODE;
 }
 	
@@ -204,12 +212,13 @@ void dispatcher()
    pq_print(procQueue);
   int oldPID = pid;
   pid = pq_pop(procQueue);
-  //printf("Dispatcher switched PID from:%d to %d\n", oldPID,pid);
   USLOSS_ContextSwitch(&procTable[oldPID].context,&procTable[pid].context);
 }
 
-void wrapperFunc(){
-	// change this argument
+void wrapperFunc()
+{
+	// wraps a call to quit upon termination of the function associated with a process
+  // to make sure the process terminates after the function has finished.  
 	P1_Quit(procTable[pid].startFunc((procTable[pid].startArg)));
 	dispatcher();
 }
@@ -230,7 +239,7 @@ void startup(int argc, char **argv)
 
   /* initialize the process table here */
 	//
-	//	
+	//	already allocated in the globals section. 
 	//  
   
   /* Initialize the Ready list, Blocked list, etc. here */
