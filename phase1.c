@@ -10,17 +10,18 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
 #include "usloss.h"
 #include "phase1.h"
-#include <string.h>
 
 /* -------------------------- Globals ------------------------------------- */
 
 
 typedef struct PCB {
-    USLOSS_Context      context;
-    int                 (*startFunc)(void *);   /* Starting function */
-    void                 *startArg;             /* Arg to starting function */
+  USLOSS_Context      context;
+  int                 (*startFunc)(void *);   /* Starting function */
+  void                 *startArg;             /* Arg to starting function */
 	int	state; // the state of the process IE  running, ready to run, not used, quit, is waiting. 
 	int priority;
 	int tag;
@@ -72,16 +73,22 @@ void pq_push(priority_queue * pq, int pid, int priority)
   else
   {
 	  p_node * curr = pq->head;
-	 if(new->priority < curr->priority){
+	  if(new->priority < curr->priority){
 		// insert at head
 		new->next = pq->head;
 		pq->head = new;
-	}else {
+	}
+  else 
+  {
 		// insert after head
-		while (curr->next != NULL) {
-			if(new->priority > curr->next->priority){
+		while (curr->next != NULL) 
+    {
+			if(new->priority > curr->next->priority)
+      {
 				curr = curr->next;
-			}else {
+			}
+      else 
+      {
 				// insert it after curr
 				new->next = curr->next;
 				curr->next = new;
@@ -103,28 +110,36 @@ int pq_pop(priority_queue * pq)
   return retVal;
 }
 
-void pq_print(priority_queue * pq){
+void pq_print(priority_queue * pq)
+{
 	p_node * curr = pq-> head;
-	while(curr != NULL){
-		//printf("%d : ",curr->pid);
+	while(curr != NULL)
+  {
 		curr = curr->next;
 	}
-	//printf("\n");
+	
 }
 
-void pq_remove(priority_queue * pq, int thePID){
-	if (pq->head->pid == thePID){
+void pq_remove(priority_queue * pq, int thePID)
+{
+	if (pq->head->pid == thePID)
+  {
 		pq->head = pq->head->next;
-	}else {
-		 p_node * curr = pq->head;
-		while (curr->next != NULL) {
-			if(curr->next->pid == thePID){
+	}
+  else 
+  {
+	  p_node * curr = pq->head;
+		while (curr->next != NULL) 
+    {
+			if(curr->next->pid == thePID)
+      {
 				curr->next = curr->next->next;
 				return;
-			}else {
+			}
+      else 
+      {
 				curr = curr->next;
 			}
-			
 		}
 	}
 }
@@ -147,16 +162,19 @@ int numProcs = 0;
 static int sentinel(void *arg);
 static void launch(void);
 
-int checkMode() {
+int checkMode() 
+{
 	return USLOSS_PsrGet() && USLOSS_PSR_CURRENT_MODE;
-	}
+}
 	
 int getNewPid()
 {
   // finds the first available PID used by fork to find pid for new process
   
-  for(int i=0; i < 50; i++){
-	  if(procTable[i].isUsed == 0){
+  for(int i=0; i < 50; i++)
+  {
+	  if(procTable[i].isUsed == 0)
+    {
 		  // 2 is the state for not used
 		  return i;
 	  }
@@ -211,9 +229,9 @@ void startup(int argc, char **argv)
   procQueue = pq_create();
 
   /* initialize the process table here */
-	//for(int i=0; i < 50; i++){
-	//	procTable[i].state = 2;
-	//  }
+	//
+	//	
+	//  
   
   /* Initialize the Ready list, Blocked list, etc. here */
 
@@ -224,13 +242,13 @@ void startup(int argc, char **argv)
   /* startup a sentinel process */
   /* HINT: you don't want any forked processes to run until startup is finished.
   
-   * You'll need to do something  to prevent that from happening.
-   * Otherwise your sentinel will start running as soon as you fork it and 
-   * it will call P1_Halt because it is the only running process.
-   */
+  * You'll need to do something  to prevent that from happening.
+  * Otherwise your sentinel will start running as soon as you fork it and 
+  * it will call P1_Halt because it is the only running process.
+  */
    
-   //printf("Stated up\n");
-   P1_Fork("sentinel", sentinel, NULL, USLOSS_MIN_STACK, 6, 0);
+  //printf("Stated up\n");
+  P1_Fork("sentinel", sentinel, NULL, USLOSS_MIN_STACK, 6, 0);
 
   /* start the P2_Startup process */
   pid = P1_Fork("P2_Startup", P2_Startup, NULL, 4 * USLOSS_MIN_STACK, 1, 0);
@@ -269,27 +287,31 @@ void finish(int argc, char **argv)
 int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority, int tag)
 {
 	// check input peramaters
-	if (!checkMode()){
+	if (!checkMode())
+  {
 		USLOSS_IllegalInstruction();
 	}	
 	
-    int newPid = getNewPid();
-	if(newPid == -1){
+  int newPid = getNewPid();
+	if(newPid == -1)
+  {
 		// we already have 50 process do something
 		return -1;
 	}
-	if(stacksize < USLOSS_MIN_STACK){
+	if(stacksize < USLOSS_MIN_STACK)
+  {
 		return -2;
 	}
-	if(priority < 0 || priority > 6){
+	if(priority < 1 || priority > 6)
+  {
 		return -3;
 	}
-	if (tag != 0 && tag !=1){
+	if (tag != 0 && tag !=1)
+  {
 		return -4;
 	}
 	
 	//printf("forked %s with PID %d\n", name,newPid);
-	// TODO: procTable[pid].child = newPid something like this to keep track of children may need later
 	numProcs++;
   procTable[newPid].startFunc = f;
   procTable[newPid].startArg = arg;
@@ -299,14 +321,16 @@ int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority
   procTable[newPid].tag = tag;
 	
 	
-    // more stuff here, e.g. allocate stack, page table, initialize context, etc.
+  // more stuff here, e.g. allocate stack, page table, initialize context, etc.
 	char * stack = malloc(stacksize*sizeof(char)); // allocating stack
   USLOSS_PTE *pt = P3_AllocatePageTable(newPid);
 	USLOSS_ContextInit(&procTable[newPid].context, stack, stacksize, pt, wrapperFunc);
 	pq_push(procQueue,newPid,priority);
-  if (priority < procTable[pid].priority) { 
+  if (priority < procTable[pid].priority) 
+  { 
 		pq_push(procQueue,pid,procTable[pid].priority);
-		dispatcher(); }
+		dispatcher(); 
+  }
   return newPid;
 } /* End of fork */
 
@@ -320,11 +344,11 @@ int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority
    ------------------------------------------------------------------------ */
 void launch(void)
 {
-	//printf("launched\n");
-  int  rc;
+	int  rc;
   int  status;
   status = USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT);
-  if (status != 0) {
+  if (status != 0) 
+  {
       USLOSS_Console("USLOSS_PsrSet failed: %d\n", status);
       USLOSS_Halt(1);
   }
@@ -340,7 +364,8 @@ void launch(void)
    Returns - nothing
    Side Effects - the currently running process quits
    ------------------------------------------------------------------------ */
-void P1_Quit(int status) {
+void P1_Quit(int status) 
+{
   if (!checkMode()) {USLOSS_IllegalInstruction();}
   // clean up current PID
   // TODO: update as things get added to PCB
@@ -349,7 +374,7 @@ void P1_Quit(int status) {
   //printf("Quitting PID %d\n", pid);
   numProcs--;
   procTable[pid].state =3;
- // memset(&procTable[pid],0,sizeof(PCB));
+  // memset(&procTable[pid],0,sizeof(PCB));
   //procTable[pid].state = 2;
 }
 
@@ -360,8 +385,10 @@ void P1_Quit(int status) {
    Returns - process state
    Side Effects - none
    ------------------------------------------------------------------------ */
-int P1_GetState(int PID) {
-	if(PID < 0 || PID > 49){
+int P1_GetState(int PID) 
+{
+	if(PID < 0 || PID > 49)
+  {
 		return -1;
 	}
   return procTable[PID].state;
