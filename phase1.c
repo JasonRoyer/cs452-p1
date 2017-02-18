@@ -445,7 +445,7 @@ int sentinel (void *notused)
     {
         /* Check for deadlock here */
 		//printf("running sent %d\n",numProcs);
-        USLOSS_WaitInt();
+    USLOSS_WaitInt();
 		dispatcher();
 		// may not need to call dispatcher here? we will see
 		
@@ -457,7 +457,10 @@ int sentinel (void *notused)
 
 
 
-
+int p1_Join(int tag, int* status)
+{
+  procTable[pid] -> state = 4;
+}
 
 /*
  *  PHASE 1b.
@@ -512,13 +515,16 @@ int P1_SemFree(P1_Semaphore sem)
 
 int P1_P(P1_Semaphore sem)
 {
+  return 0;
 }
 
 int P1_V(P1_Semaphore sem)
 {
+  return 0;
 }
 
 char *P1_GetName(P1_Semaphore sem)
 {
+  return 0;
 }
 
