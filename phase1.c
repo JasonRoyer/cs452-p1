@@ -18,11 +18,10 @@
 /* -------------------------- Globals ------------------------------------- */
 // semaphore struct along with global vars indicatin number of semaphors and a global semaphore table. 
 int semCount;
-typedef struct P1_Semaphore P1_Semaphore;
 typedef struct priority_queue priority_queue;
 
 
-struct  Semaphore
+struct  P1_Semaphore
 {
   int   value;
   char*  name;
@@ -30,7 +29,7 @@ struct  Semaphore
   
 };
 
-Semaphore *semTable[P1_MAXSEM];
+P1_Semaphore *semTable[P1_MAXSEM];
 
 typedef struct PCB {
   USLOSS_Context      context;
@@ -40,6 +39,8 @@ typedef struct PCB {
 	int priority;
 	int tag;
 	int isUsed;
+  int ppid;
+  int retcode; // status  return code. 
 } PCB;
 
 
@@ -490,9 +491,11 @@ int P1_SemCreate(char* name, unsigned int value, P1_Semaphore *sem)
   if (semCount == P1_MAXSEM)      { return -2; }
   if (semTableSearch(name) != -1) { return -1; }
   int inx = findSemSpace();
-  sem = malloc(sizeof(P1_Semaphore));
+  sem* = malloc(sizeof(P1_Semaphore));
   sem -> name = strdup(name);
   sem -> value = value;
+  sem -> q = pq_create();
+
   semTable[inx] = sem;
   return 0;
 }
