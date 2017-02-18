@@ -18,13 +18,17 @@
 /* -------------------------- Globals ------------------------------------- */
 // semaphore struct along with global vars indicatin number of semaphors and a global semaphore table. 
 int semCount;
+typedef struct P1_Semaphore P1_Semaphore;
+typedef struct priority_queue priority_queue;
 
-typedef struct  Semaphore
+
+struct  Semaphore
 {
   int   value;
   char*  name;
+  priority_queue q;
   
-} P1_Semaphore;
+};
 
 Semaphore *semTable[P1_MAXSEM];
 
@@ -449,6 +453,8 @@ int sentinel (void *notused)
     /* Never gets here. */
     return 0;
 } /* End of sentinel */
+
+
 
 
 
