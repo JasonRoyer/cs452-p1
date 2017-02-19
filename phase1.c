@@ -9,6 +9,10 @@
    ------------------------------------------------------------------------ */
 
 #include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include "usloss.h"
 #include "phase1.h"
 
@@ -18,6 +22,17 @@ typedef struct PCB {
     USLOSS_Context      context;
     int                 (*startFunc)(void *);   /* Starting function */
     void                 *startArg;             /* Arg to starting function */
+	int		state;	/* The state the process is in
+						-1:	invalid PID
+						0:	the process is running
+						1:	the process is ready
+						2:	(not used)
+						3: 	the process has quit
+						4:      the process is waiting on a semaphore
+					*/
+	int 	isUsed;  /* Notes if the process space is free to be used. 0 = free 1 = being used*/
+	int 	priority; /* The priority of the process (highest priority is 1,lowest priority is 6) */
+	int 	tag; /* The tag is either 0 or 1, and is used by P1_Join to wait for children with a matching tag. */
 } PCB;
 
 
@@ -31,12 +46,34 @@ int pid = -1;
 /* number of processes */
 int numProcs = 0;
 
-/* The Queue of process ready to run. Functions and stuct defined at bottom of file */
+typedef struct p_node
+{
+  int pid;
+  int priority;
+  struct p_node * next;
+} p_node;
+typedef struct priority_queue
+{
+  p_node * head;
+
+} priority_queue;
+
+
+/* The Queue of process ready to run. Functions defined at bottom of file */
 priority_queue * readyQueue;
 
 static int sentinel(void *arg);
 static void launch(void);
 /* Declaration of function prototypes */
+void pq_push(priority_queue*, int, int);
+int pq_pop(priority_queue*);
+void pq_print(priority_queue*);
+void pq_remove(priority_queue*, int );
+priority_queue * pq_create();
+void IllegalModeHandler(int, void*);
+int inKernalMode();
+int getNewPid();
+void wrapperFunc();
 
 /* -------------------------- Functions ----------------------------------- */
 /* ------------------------------------------------------------------------
@@ -53,6 +90,41 @@ void dispatcher()
    * Run the highest priority runnable process. There is guaranteed to be one
    * because the sentinel is always runnable.
    */
+   
+    /* if (priority < procTable[pid].priority){ 
+			pq_push(readyQueue,pid,procTable[pid].priority);
+			 
+	}
+	*/
+	
+	//USLOSS_Console("PID %d coming into dispatcher\n",pid);	
+	if(pid != -1 && procTable[pid].state == 0 ){
+		// place current back into queue	
+		//USLOSS_Console("pushing PID %d onto queue\n",pid);		
+		pq_push(readyQueue,pid,procTable[pid].priority);
+	}	
+	//pq_print(readyQueue);
+	//save old and pop new
+	int oldPID = pid;
+	pid = pq_pop(readyQueue);
+	// if pid.state is waiting pop another
+	procTable[pid].state = 0; // mark new as running
+	
+	if(oldPID == -1){
+		// if it's first proccess launch it
+		//USLOSS_Console("Launching PID %d\n",pid);	
+		launch();
+	}else if(oldPID != pid){
+		if(procTable[oldPID].state != 3){
+			procTable[oldPID].state = 1; // state 1 means it's ready to run.		
+		}
+		// if it's not the same procces switch them.
+		//USLOSS_Console("Switching to PID %d\n",pid);		
+		USLOSS_ContextSwitch(&procTable[oldPID].context,&procTable[pid].context);
+	}
+	// start here
+	
+	
 }
 /* ------------------------------------------------------------------------
    Name - startup
@@ -70,17 +142,12 @@ void startup(int argc, char **argv)
   /* Initialize the Ready list, Blocked list, etc. here */
 	readyQueue = pq_create();
   /* Initialize the interrupt vector here */
-
+	USLOSS_IntVec[USLOSS_ILLEGAL_INT] = IllegalModeHandler;
   /* Initialize the semaphores here */
 
   /* startup a sentinel process */
-  /* HINT: you don't want any forked processes to run until startup is finished.
-   * You'll need to do something  to prevent that from happening.
-   * Otherwise your sentinel will start running as soon as you fork it and 
-   * it will call P1_Halt because it is the only running process.
-   */
   P1_Fork("sentinel", sentinel, NULL, USLOSS_MIN_STACK, 6, 0);
-
+	
   /* start the P2_Startup process */
   P1_Fork("P2_Startup", P2_Startup, NULL, 4 * USLOSS_MIN_STACK, 1, 0);
 
@@ -116,11 +183,61 @@ void finish(int argc, char **argv)
    ------------------------------------------------------------------------ */
 int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority, int tag)
 {
-    int newPid = 0;
-    /* newPid = pid of empty PCB here */
+	// if in user mode throw illegal exception
+	if(!inKernalMode()){
+		USLOSS_IllegalInstruction();
+		return -5;
+	}
+	
+	/* newPid = pid of empty PCB here */
+	int newPid = getNewPid();
+	if(newPid == -1){
+		// we already have 50 process 
+		return -1;
+	}
+	
+	if(stacksize < USLOSS_MIN_STACK){
+		return -2;
+	}
+	
+	if(priority < 1 || priority > 6){
+		return -3;
+	}
+	
+	if (tag != 0 && tag !=1){
+		return -4;
+	}
+	
+	// incriment procces counter
+	numProcs++;
+	
+    /* Load PCB block at pid with correct information */
     procTable[newPid].startFunc = f;
     procTable[newPid].startArg = arg;
+	procTable[newPid].state = 1;
+	procTable[newPid].priority = priority;
+	procTable[newPid].tag = tag;
+	procTable[newPid].isUsed = 1;
+	
     // more stuff here, e.g. allocate stack, page table, initialize context, etc.
+	//USLOSS_Console("Process %d, %s is in state %d during fork\n",newPid,name, procTable[newPid].state);
+	// allocate stack
+	char * stack = malloc(stacksize*sizeof(char));
+	// allocate page table
+	USLOSS_PTE *pagetable = P3_AllocatePageTable(newPid);
+	// initialize context with wraper function 
+	USLOSS_ContextInit(&procTable[newPid].context, stack, stacksize, pagetable, wrapperFunc);
+	
+	// push the new process into the readyQueue
+	pq_push(readyQueue,newPid,priority);
+	
+	// call the dispatcher incase we need to switch to the new process
+	
+	if(numProcs >1){
+		dispatcher();
+	}
+	
+	
     return newPid;
 } /* End of fork */
 
@@ -154,7 +271,16 @@ void launch(void)
    Side Effects - the currently running process quits
    ------------------------------------------------------------------------ */
 void P1_Quit(int status) {
-  // Do something here.
+	if(!inKernalMode()){
+		USLOSS_IllegalInstruction();
+	}else {
+		 // decrement procces counter
+		 // USLOSS_Console("Quiting PID %d\n", pid);
+		  numProcs--;
+		  procTable[pid].state =3;
+	}
+	
+ 
 }
 
 /* ------------------------------------------------------------------------
@@ -165,7 +291,14 @@ void P1_Quit(int status) {
    Side Effects - none
    ------------------------------------------------------------------------ */
 int P1_GetState(int PID) {
-  return 0;
+	if(PID <0){
+		return -1;
+	}
+  return procTable[PID].state;
+}
+
+int P1_GetPID(){
+	return pid;
 }
 
 /* ------------------------------------------------------------------------
@@ -181,6 +314,7 @@ int P1_GetState(int PID) {
    ----------------------------------------------------------------------- */
 int sentinel (void *notused)
 {
+	//USLOSS_Console("In sentinel numProcs is %d\n", numProcs);
     while (numProcs > 1)
     {
         /* Check for deadlock here */
@@ -191,13 +325,54 @@ int sentinel (void *notused)
     return 0;
 } /* End of sentinel */
 
+
+/*----------------- Interupt Handlers -------------*/
+
+void IllegalModeHandler(int interupt, void *arg){
+	USLOSS_Console("Kernel Mode Required!\n");	
+	P1_Quit(-1);
+}
+
+
+
+/* ---------------- Helper Functions ---------------- */
+
+/*    USLOSS_PsrGet() returns the register that checks for modes and interupt handlers
+		USLOSS_PSR_CURRENT_MODE aka 0001
+		Since the 1st bit in the register is set to 1 if in kernal mode bitwise and the two togeather to see if in kernal mode.
+  
+  */
+int inKernalMode() { 
+	return USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE;
+}
+
+ // finds the first available PID. Used by fork to find pid for new process
+int getNewPid(){  
+  for(int i=0; i < 50; i++){
+	  if(procTable[i].isUsed == 0){
+		  // 2 is the state for not used
+		  return i;
+	  }
+  }
+  // 50 processes have run if it reaches here. 
+  // so return -1 and deal with it later
+  return -1;
+}
+
+/* 
+	Wraper function to call the quit function after the process' function has finished.
+	Without this wraper the OS would not know when the function finished.
+*/
+void wrapperFunc(){
+	P1_Quit(procTable[pid].startFunc((procTable[pid].startArg)));
+	dispatcher();
+}
+
+
+
+
 /* ----------------- Functions to implement Queues -----------*/
 
-typedef struct priority_queue
-{
-  p_node * head;
-
-} priority_queue;
 
 
 priority_queue * pq_create()
@@ -275,8 +450,10 @@ void pq_print(priority_queue * pq)
 	p_node * curr = pq-> head;
 	while(curr != NULL)
   {
+		USLOSS_Console(" %d(%d) | ", curr->pid,procTable[curr->pid].priority);
 		curr = curr->next;
 	}
+	USLOSS_Console("\n");
 }
 
 void pq_remove(priority_queue * pq, int thePID)
