@@ -25,11 +25,11 @@ struct  P1_Semaphore
 {
   int   value;
   char*  name;
-  priority_queue q;
+  priority_queue * q;
   
 };
 
-P1_Semaphore *semTable[P1_MAXSEM];
+P1_Semaphore **semTable[P1_MAXSEM];
 
 typedef struct PCB {
   USLOSS_Context      context;
@@ -211,8 +211,8 @@ void modInterrupt(int x)
 {
   // this function enables / disables interrupts based on the parameter x. 
   // if x = 0, disable, if x = 1, enable. 
-  int result = x ? (USLOSS_PsrGet() || USLOSS_PSR_CURR_INT) : (USLOSS_PsrGet() && !USLOSS_PSR_CURR_INT);
-  USLOSS_PsrSet(result);
+  //int result = x ? (USLOSS_PsrGet() || USLOSS_PSR_CURR_INT) : (USLOSS_PsrGet() && !USLOSS_PSR_CURR_INT);
+  //USLOSS_PsrSet(result);
   return;
 }
 
@@ -459,72 +459,73 @@ int sentinel (void *notused)
 
 int p1_Join(int tag, int* status)
 {
-  procTable[pid] -> state = 4;
+  //
+  return 0;
 }
 
 /*
  *  PHASE 1b.
  */
 
-// 5. Semaphore functions. 
-int semTableSearch(char* name)
-{
-  //  this function searches our table of semaphores. 
-  //  returns the integer index of the semaphore, 
-  //  -1 if the table does not contain a semaphore with the name passed in as argument .
-  int i; for (i = 0; i<P1_MAXSEM ; i++)
-  {
-    if (strcmp(semTable[i]->name,name) == 0) { return i;}
-  }
-  return -1;
-}
-
-int findSemSpace()
-{
-  // this function returns the index of the first open location in the semphore table. 
-  int i = 0; while (semTable[i] != NULL) { i++; } return i;
-}
-int procsBlockedOnSem(P1_Semaphore *sem)
-{
-  // TODO: implement some sort of proces queue in the semaphore struct
-  // this function checks to see if there are processes waiting on the semaphore. 
-}
-int P1_SemCreate(char* name, unsigned int value, P1_Semaphore *sem)
-{
-  if (semCount == P1_MAXSEM)      { return -2; }
-  if (semTableSearch(name) != -1) { return -1; }
-  int inx = findSemSpace();
-  sem* = malloc(sizeof(P1_Semaphore));
-  sem -> name = strdup(name);
-  sem -> value = value;
-  sem -> q = pq_create();
-
-  semTable[inx] = sem;
-  return 0;
-}
-
-int P1_SemFree(P1_Semaphore sem)
-{
-  int inx  = semTableSearch(sem->name);
-  if (inx == -1) { return -1; }
-  if (procsBlockedOnSem(sem)) { return -2; }
-  semTable[inx] = NULL;
-  free(sem);
-  return 0;
-}
-
-int P1_P(P1_Semaphore sem)
-{
-  return 0;
-}
-
-int P1_V(P1_Semaphore sem)
-{
-  return 0;
-}
-
-char *P1_GetName(P1_Semaphore sem)
-{
-  return 0;
-}
-
+//// 5. Semaphore functions. 
+//int semTableSearch(char* name)
+//{
+//  //  this function searches our table of semaphores. 
+//  //  returns the integer index of the semaphore, 
+//  //  -1 if the table does not contain a semaphore with the name passed in as argument .
+//  int i; for (i = 0; i<P1_MAXSEM ; i++)
+//  {
+//    if (strcmp(semTable[i]->name,name) == 0) { return i;}
+//  }
+//  return -1;
+//}
+//
+//int findSemSpace()
+//{
+//  // this function returns the index of the first open location in the semphore table. 
+//  int i = 0; while (semTable[i] != NULL) { i++; } return i;
+//}
+//int procsBlockedOnSem(P1_Semaphore *sem)
+//{
+//  // TODO: implement some sort of proces queue in the semaphore struct
+//  // this function checks to see if there are processes waiting on the semaphore. 
+//}
+//int P1_SemCreate(char* name, unsigned int value, P1_Semaphore *sem)
+//{
+//  if (semCount == P1_MAXSEM)      { return -2; }
+//  if (semTableSearch(name) != -1) { return -1; }
+//  int inx = findSemSpace();
+//  sem* = malloc(sizeof(P1_Semaphore));
+//  sem -> name = strdup(name);
+//  sem -> value = value;
+//  sem -> q = pq_create();
+//
+//  semTable[inx] = sem;
+//  return 0;
+//}
+//
+//int P1_SemFree(P1_Semaphore sem)
+//{
+//  int inx  = semTableSearch(sem->name);
+//  if (inx == -1) { return -1; }
+//  if (procsBlockedOnSem(sem)) { return -2; }
+//  semTable[inx] = NULL;
+//  free(sem);
+//  return 0;
+//}
+//
+//int P1_P(P1_Semaphore sem)
+//{
+//  return 0;
+//}
+//
+//int P1_V(P1_Semaphore sem)
+//{
+//  return 0;
+//}
+//
+//char *P1_GetName(P1_Semaphore sem)
+//{
+//  return 0;
+//}
+//
