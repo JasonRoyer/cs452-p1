@@ -187,7 +187,7 @@ int checkMode()
 {
   // Returns 1 if kernel mode, 0 if user mode. 
   // helps us restrict access to our functions. 
-	return USLOSS_PsrGet() && USLOSS_PSR_CURRENT_MODE;
+	return USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE;
 }
 	
 int getNewPid()
@@ -240,6 +240,30 @@ void dispatcher()
   USLOSS_ContextSwitch(&procTable[oldPID].context,&procTable[pid].context);
 }
 
+/* ------------------------------------------------------------------------
+   Name - P1_Quit
+   Purpose - Causes the process to quit and wait for its parent to call P1_Join.
+   Parameters - quit status
+   Returns - nothing
+   Side Effects - the currently running process quits
+   ------------------------------------------------------------------------ */
+void P1_Quit(int status) 
+{
+  //if (!checkMode()) {USLOSS_IllegalInstruction();}
+  // clean up current PID
+  // TODO: update as things get added to PCB
+  // remove from Q this happens right now because of launch
+  pq_remove(procQueue, pid);
+  //printf("Quitting PID %d\n", pid);
+  numProcs--;
+  procTable[pid].state =3;
+  // memset(&procTable[pid],0,sizeof(PCB));
+  //procTable[pid].state = 2;
+}
+void IllegalModeHandler(int interupt, void *arg){
+	USLOSS_Console("Kernel Mode Required!\n");	
+	P1_Quit(-1);
+}
 void wrapperFunc()
 {
 	// wraps a call to quit upon termination of the function associated with a process
@@ -270,7 +294,7 @@ void startup(int argc, char **argv)
   /* Initialize the Ready list, Blocked list, etc. here */
 
   /* Initialize the interrupt vector here */
-
+	USLOSS_IntVec[USLOSS_ILLEGAL_INT] = IllegalModeHandler;
   /* Initialize the semaphores here */
 
   /* startup a sentinel process */
@@ -324,8 +348,8 @@ int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority
 	if (!checkMode())
   {
 		USLOSS_IllegalInstruction();
-	}	
-	
+		return -5;
+	}
   int newPid = getNewPid();
 	if(newPid == -1)
   {
@@ -391,26 +415,7 @@ void launch(void)
   P1_Quit(rc);
 } /* End of launch */
 
-/* ------------------------------------------------------------------------
-   Name - P1_Quit
-   Purpose - Causes the process to quit and wait for its parent to call P1_Join.
-   Parameters - quit status
-   Returns - nothing
-   Side Effects - the currently running process quits
-   ------------------------------------------------------------------------ */
-void P1_Quit(int status) 
-{
-  if (!checkMode()) {USLOSS_IllegalInstruction();}
-  // clean up current PID
-  // TODO: update as things get added to PCB
-  // remove from Q this happens right now because of launch
-  pq_remove(procQueue, pid);
-  //printf("Quitting PID %d\n", pid);
-  numProcs--;
-  procTable[pid].state =3;
-  // memset(&procTable[pid],0,sizeof(PCB));
-  //procTable[pid].state = 2;
-}
+
 
 /* ------------------------------------------------------------------------
    Name - P1_GetState
@@ -426,6 +431,11 @@ int P1_GetState(int PID)
 		return -1;
 	}
   return procTable[PID].state;
+}
+
+
+int P1_GetPID(){
+	return pid;
 }
 
 /* ------------------------------------------------------------------------
