@@ -10,19 +10,37 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
 #include "usloss.h"
 #include "phase1.h"
 
 /* -------------------------- Globals ------------------------------------- */
+// semaphore struct along with global vars indicatin number of semaphors and a global semaphore table. 
+int semCount;
+typedef struct priority_queue priority_queue;
 
+
+struct  P1_Semaphore
+{
+  int   value;
+  char*  name;
+  priority_queue * q;
+  
+};
+
+P1_Semaphore **semTable[P1_MAXSEM];
 
 typedef struct PCB {
-    USLOSS_Context      context;
-    int                 (*startFunc)(void *);   /* Starting function */
-    void                 *startArg;             /* Arg to starting function */
+  USLOSS_Context      context;
+  int                 (*startFunc)(void *);   /* Starting function */
+  void                 *startArg;             /* Arg to starting function */
 	int	state; // the state of the process IE  running, ready to run, not used, quit, is waiting. 
 	int priority;
 	int tag;
+	int isUsed;
+  int ppid;
+  int retcode; // status  return code. 
 } PCB;
 
 
@@ -51,6 +69,8 @@ priority_queue * pq_create()
   return retq;
 }
 
+
+/* and here are some associated functions to help us use the queue */
 void pq_push(priority_queue * pq, int pid, int priority)
 {
   // THis function takes a pointer to the priority queue
@@ -69,28 +89,89 @@ void pq_push(priority_queue * pq, int pid, int priority)
   if (pq->head == NULL) {pq->head = new;}
   else
   {
-    p_node * curr = head;
-    while (new->priority > curr->priority) { curr = curr->next; }
-    new -> next = curr->next;
-    curr->next = new;
+	  p_node * curr = pq->head;
+	  if(new->priority < curr->priority){
+		// insert at head
+		new->next = pq->head;
+		pq->head = new;
+	}
+  else 
+  {
+		// insert after head
+		while (curr->next != NULL) 
+    {
+			if(new->priority > curr->next->priority)
+      {
+				curr = curr->next;
+			}
+      else 
+      {
+				// insert it after curr
+				new->next = curr->next;
+				curr->next = new;
+				return;
+			}
+			
+		}
+	}
+	
   }
   return;
 } 
 
 int pq_pop(priority_queue * pq)
 {
+  // pops the highest priority element from the queue
+  //  and returns the PID
   if (pq->head == NULL) { return 0; }
   int retVal = pq->head->pid;
   pq->head = pq->head->next;
   return retVal;
 }
 
+void pq_print(priority_queue * pq)
+{
+  // prints the contents of the priority queue 
+  //  used for debugging
+	p_node * curr = pq-> head;
+	while(curr != NULL)
+  {
+		curr = curr->next;
+	}
+}
 
-
+void pq_remove(priority_queue * pq, int thePID)
+{
+  // removes an element from the queue by PID. 
+  // technically breaches the definition of what a priority queue is, 
+  // but we are the programmers now. 
+	if (pq->head->pid == thePID)
+  {
+		pq->head = pq->head->next;
+	}
+  else 
+  {
+	  p_node * curr = pq->head;
+		while (curr->next != NULL) 
+    {
+			if(curr->next->pid == thePID)
+      {
+				curr->next = curr->next->next;
+				return;
+			}
+      else 
+      {
+				curr = curr->next;
+			}
+		}
+	}
+}
 
 /* the process table */
 PCB procTable[P1_MAXPROC];
 
+// the priority queue
+priority_queue * procQueue;
 
 /* current process ID */
 int pid = -1;
@@ -102,16 +183,21 @@ int numProcs = 0;
 static int sentinel(void *arg);
 static void launch(void);
 
-int checkMode() {
-	return USLOSS_PsrGet() && USLOSS_PSR_CURRENT_MODE;
-	}
+int checkMode() 
+{
+  // Returns 1 if kernel mode, 0 if user mode. 
+  // helps us restrict access to our functions. 
+	return USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE;
+}
 	
 int getNewPid()
 {
   // finds the first available PID used by fork to find pid for new process
   
-  for(int i=0; i < 50; i++){
-	  if(procTable[i].state == 2){
+  for(int i=0; i < 50; i++)
+  {
+	  if(procTable[i].isUsed == 0)
+    {
 		  // 2 is the state for not used
 		  return i;
 	  }
@@ -121,7 +207,17 @@ int getNewPid()
   return -1;
 }
 
+void modInterrupt(int x)
+{
+  // this function enables / disables interrupts based on the parameter x. 
+  // if x = 0, disable, if x = 1, enable. 
+  //int result = x ? (USLOSS_PsrGet() || USLOSS_PSR_CURR_INT) : (USLOSS_PsrGet() && !USLOSS_PSR_CURR_INT);
+  //USLOSS_PsrSet(result);
+  return;
+}
 
+void  enableInterrupt() { modInterrupt(1); return; }
+void disableInterrupt() { modInterrupt(0); return; }
 
 /* -------------------------- Functions ----------------------------------- */
 /* ------------------------------------------------------------------------
@@ -138,14 +234,40 @@ void dispatcher()
    * Run the highest priority runnable process. There is guaranteed to be one
    * because the sentinel is always runnable.
    */
-   int oldPID = pid;
-  // pid = pop();
-  printf("Dispatcher switched PID from:%d to %d\n", oldPID,pid);
-   USLOSS_ContextSwitch(&procTable[oldPID].context,&procTable[pid].context);
+   pq_print(procQueue);
+  int oldPID = pid;
+  pid = pq_pop(procQueue);
+  USLOSS_ContextSwitch(&procTable[oldPID].context,&procTable[pid].context);
 }
 
-void wraperFunc(){
-	// change this argument
+/* ------------------------------------------------------------------------
+   Name - P1_Quit
+   Purpose - Causes the process to quit and wait for its parent to call P1_Join.
+   Parameters - quit status
+   Returns - nothing
+   Side Effects - the currently running process quits
+   ------------------------------------------------------------------------ */
+void P1_Quit(int status) 
+{
+  //if (!checkMode()) {USLOSS_IllegalInstruction();}
+  // clean up current PID
+  // TODO: update as things get added to PCB
+  // remove from Q this happens right now because of launch
+  pq_remove(procQueue, pid);
+  //printf("Quitting PID %d\n", pid);
+  numProcs--;
+  procTable[pid].state =3;
+  // memset(&procTable[pid],0,sizeof(PCB));
+  //procTable[pid].state = 2;
+}
+void IllegalModeHandler(int interupt, void *arg){
+	USLOSS_Console("Kernel Mode Required!\n");	
+	P1_Quit(-1);
+}
+void wrapperFunc()
+{
+	// wraps a call to quit upon termination of the function associated with a process
+  // to make sure the process terminates after the function has finished.  
 	P1_Quit(procTable[pid].startFunc((procTable[pid].startArg)));
 	dispatcher();
 }
@@ -160,28 +282,31 @@ void wraperFunc(){
    ----------------------------------------------------------------------- */
 void startup(int argc, char **argv)
 {
+  semCount = 0;
+  // initializing process queue
+  procQueue = pq_create();
 
   /* initialize the process table here */
-	for(int i=0; i < 50; i++){
-		procTable[i].state = 2;
-	  }
+	//
+	//	already allocated in the globals section. 
+	//  
   
   /* Initialize the Ready list, Blocked list, etc. here */
 
   /* Initialize the interrupt vector here */
-
+	USLOSS_IntVec[USLOSS_ILLEGAL_INT] = IllegalModeHandler;
   /* Initialize the semaphores here */
 
   /* startup a sentinel process */
   /* HINT: you don't want any forked processes to run until startup is finished.
   
-   * You'll need to do something  to prevent that from happening.
-   * Otherwise your sentinel will start running as soon as you fork it and 
-   * it will call P1_Halt because it is the only running process.
-   */
+  * You'll need to do something  to prevent that from happening.
+  * Otherwise your sentinel will start running as soon as you fork it and 
+  * it will call P1_Halt because it is the only running process.
+  */
    
-   printf("Stated up\n");
-   P1_Fork("sentinel", sentinel, NULL, USLOSS_MIN_STACK, 6, 0);
+  //printf("Stated up\n");
+  P1_Fork("sentinel", sentinel, NULL, USLOSS_MIN_STACK, 6, 0);
 
   /* start the P2_Startup process */
   pid = P1_Fork("P2_Startup", P2_Startup, NULL, 4 * USLOSS_MIN_STACK, 1, 0);
@@ -220,42 +345,51 @@ void finish(int argc, char **argv)
 int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority, int tag)
 {
 	// check input peramaters
-	if (!checkMode()){
+	if (!checkMode())
+  {
 		USLOSS_IllegalInstruction();
-	}	
-	
-    int newPid = getNewPid();
-	if(newPid == -1){
+		return -5;
+	}
+  int newPid = getNewPid();
+	if(newPid == -1)
+  {
 		// we already have 50 process do something
 		return -1;
 	}
-	if(stacksize < USLOSS_MIN_STACK){
+	if(stacksize < USLOSS_MIN_STACK)
+  {
 		return -2;
 	}
-	if(priority < 0 || priority > 6){
+	if(priority < 1 || priority > 6)
+  {
 		return -3;
 	}
-	if (tag != 0 && tag !=1){
+	if (tag != 0 && tag !=1)
+  {
 		return -4;
 	}
 	
-	printf("forked %s with PID %d\n", name,newPid);
-	// TODO: procTable[pid].child = newPid something like this to keep track of children may need later
+	//printf("forked %s with PID %d\n", name,newPid);
 	numProcs++;
-    procTable[newPid].startFunc = f;
-    procTable[newPid].startArg = arg;
+  procTable[newPid].startFunc = f;
+  procTable[newPid].startArg = arg;
 	procTable[newPid].state = 1;
+	procTable[newPid].isUsed = 1;
 	procTable[newPid].priority = priority;
-    procTable[newPid].tag = tag;
+  procTable[newPid].tag = tag;
 	
 	
-    // more stuff here, e.g. allocate stack, page table, initialize context, etc.
+  // more stuff here, e.g. allocate stack, page table, initialize context, etc.
 	char * stack = malloc(stacksize*sizeof(char)); // allocating stack
-    USLOSS_PTE *pt = P3_AllocatePageTable(newPid);
-	USLOSS_ContextInit(&procTable[newPid].context, stack, stacksize, pt, wraperFunc);
-	// push();
-	
-    return newPid;
+  USLOSS_PTE *pt = P3_AllocatePageTable(newPid);
+	USLOSS_ContextInit(&procTable[newPid].context, stack, stacksize, pt, wrapperFunc);
+	pq_push(procQueue,newPid,priority);
+  if (priority < procTable[pid].priority) 
+  { 
+		pq_push(procQueue,pid,procTable[pid].priority);
+		dispatcher(); 
+  }
+  return newPid;
 } /* End of fork */
 
 /* ------------------------------------------------------------------------
@@ -268,11 +402,11 @@ int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority
    ------------------------------------------------------------------------ */
 void launch(void)
 {
-	printf("launched\n");
-  int  rc;
+	int  rc;
   int  status;
   status = USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT);
-  if (status != 0) {
+  if (status != 0) 
+  {
       USLOSS_Console("USLOSS_PsrSet failed: %d\n", status);
       USLOSS_Halt(1);
   }
@@ -281,25 +415,7 @@ void launch(void)
   P1_Quit(rc);
 } /* End of launch */
 
-/* ------------------------------------------------------------------------
-   Name - P1_Quit
-   Purpose - Causes the process to quit and wait for its parent to call P1_Join.
-   Parameters - quit status
-   Returns - nothing
-   Side Effects - the currently running process quits
-   ------------------------------------------------------------------------ */
-void P1_Quit(int status) {
-  if (!checkMode()) {USLOSS_IllegalInstruction();}
-  // clean up current PID
-  // TODO: update as things get added to PCB
-  printf("Quitting PID %d\n", pid);
-  numProcs--;
-  procTable[pid].startFunc = NULL;
-  procTable[pid].startArg = NULL;
-  procTable[pid].state = 2;
-  procTable[pid].priority = 6;
-  procTable[pid].tag = 0;
-}
+
 
 /* ------------------------------------------------------------------------
    Name - P1_GetState
@@ -308,11 +424,18 @@ void P1_Quit(int status) {
    Returns - process state
    Side Effects - none
    ------------------------------------------------------------------------ */
-int P1_GetState(int PID) {
-	if(PID < 0 || PID > 49){
+int P1_GetState(int PID) 
+{
+	if(PID < 0 || PID > 49)
+  {
 		return -1;
 	}
   return procTable[PID].state;
+}
+
+
+int P1_GetPID(){
+	return pid;
 }
 
 /* ------------------------------------------------------------------------
@@ -331,7 +454,8 @@ int sentinel (void *notused)
     while (numProcs > 1)
     {
         /* Check for deadlock here */
-        USLOSS_WaitInt();
+		//printf("running sent %d\n",numProcs);
+    USLOSS_WaitInt();
 		dispatcher();
 		// may not need to call dispatcher here? we will see
 		
@@ -340,3 +464,78 @@ int sentinel (void *notused)
     /* Never gets here. */
     return 0;
 } /* End of sentinel */
+
+
+
+int p1_Join(int tag, int* status)
+{
+  //
+  return 0;
+}
+
+/*
+ *  PHASE 1b.
+ */
+
+//// 5. Semaphore functions. 
+//int semTableSearch(char* name)
+//{
+//  //  this function searches our table of semaphores. 
+//  //  returns the integer index of the semaphore, 
+//  //  -1 if the table does not contain a semaphore with the name passed in as argument .
+//  int i; for (i = 0; i<P1_MAXSEM ; i++)
+//  {
+//    if (strcmp(semTable[i]->name,name) == 0) { return i;}
+//  }
+//  return -1;
+//}
+//
+//int findSemSpace()
+//{
+//  // this function returns the index of the first open location in the semphore table. 
+//  int i = 0; while (semTable[i] != NULL) { i++; } return i;
+//}
+//int procsBlockedOnSem(P1_Semaphore *sem)
+//{
+//  // TODO: implement some sort of proces queue in the semaphore struct
+//  // this function checks to see if there are processes waiting on the semaphore. 
+//}
+//int P1_SemCreate(char* name, unsigned int value, P1_Semaphore *sem)
+//{
+//  if (semCount == P1_MAXSEM)      { return -2; }
+//  if (semTableSearch(name) != -1) { return -1; }
+//  int inx = findSemSpace();
+//  sem* = malloc(sizeof(P1_Semaphore));
+//  sem -> name = strdup(name);
+//  sem -> value = value;
+//  sem -> q = pq_create();
+//
+//  semTable[inx] = sem;
+//  return 0;
+//}
+//
+//int P1_SemFree(P1_Semaphore sem)
+//{
+//  int inx  = semTableSearch(sem->name);
+//  if (inx == -1) { return -1; }
+//  if (procsBlockedOnSem(sem)) { return -2; }
+//  semTable[inx] = NULL;
+//  free(sem);
+//  return 0;
+//}
+//
+//int P1_P(P1_Semaphore sem)
+//{
+//  return 0;
+//}
+//
+//int P1_V(P1_Semaphore sem)
+//{
+//  return 0;
+//}
+//
+//char *P1_GetName(P1_Semaphore sem)
+//{
+//  return 0;
+//}
+//
