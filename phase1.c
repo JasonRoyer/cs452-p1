@@ -459,7 +459,8 @@ int P1_P(P1_Semaphore sem)
     if (s->value > 0) { s->value--; break; } // break when value is positive. 
     else
     {
-      // otherwise we wait. 
+      // otherwise we wait.
+      pq_remove(readyQueue, pid); 
       pq_push(s->q, pid, 1); // pushing the pid on the semaphore queue. 
       dispatcher();
     }
@@ -472,7 +473,7 @@ int P1_V(P1_Semaphore sem)
 {
   // verhogen
   disableInterrupt();
-  s = ( Semaphore*) sem;
+  Semaphore * s = ( Semaphore*) sem;
   if (semTableSearch(s->name) == -1) { enableInterrupt(); return -1; }
   else
   {
@@ -480,7 +481,7 @@ int P1_V(P1_Semaphore sem)
     if(!pq_isEmpty(s->q))
     {
       int temppid  = pq_pop(s->q);
-      pq_push(procQueue,temppid,1);
+      pq_push(readyQueue,temppid,1);
       dispatcher();
     }
     enableInterrupt(); return 0;
@@ -489,7 +490,7 @@ int P1_V(P1_Semaphore sem)
 
 char *P1_GetName(P1_Semaphore sem)
 {
-  retStr = strdup((Semaphore*) sem -> name);
+  char * retStr = strdup((Semaphore*) sem -> name);
   return retStr;
 }
 
