@@ -19,7 +19,7 @@
 /* -------------------------- Globals ------------------------------------- */
 
 // semaphore struct along with global vars indicatin number of semaphors and a global semaphore table. 
-int semCount;
+int semCount =0;;
 typedef struct priority_queue priority_queue;
 typedef struct Semaphore Semaphore;
 
@@ -48,6 +48,11 @@ typedef struct PCB {
 	int 	isUsed;  /* Notes if the process space is free to be used. 0 = free 1 = being used*/
 	int 	priority; /* The priority of the process (highest priority is 1,lowest priority is 6) */
 	int 	tag; /* The tag is either 0 or 1, and is used by P1_Join to wait for children with a matching tag. */
+	int 	pPID; /* The PID of the parent of this procces*/ 
+	int 	status; /* The status of the process once quit has been called*/
+	P1_Semaphore* childJoinSem0; /* Semaphore keeping track of how many children have tag 0 and have quit*/
+	P1_Semaphore* childJoinSem1;/* Semaphore keeping track of how many children have tag 1 and have quit*/
+	P1_Semaphore* semQuitable;/* Semaphore keeping track if this procces can finish quiting*/
 } PCB;
 
 
@@ -72,6 +77,7 @@ typedef struct priority_queue
   p_node * head;
 
 } priority_queue;
+
 
 
 /* The Queue of process ready to run. Functions defined at bottom of file */
@@ -118,7 +124,7 @@ void dispatcher()
 	}
 	*/
 	
-	//USLOSS_Console("PID %d coming into dispatcher\n",pid);	
+	///USLOSS_Console("PID %d coming into dispatcher\n",pid);	
 	if(pid != -1 && procTable[pid].state == 0 ){
 		// place current back into queue	
 		//USLOSS_Console("pushing PID %d onto queue\n",pid);		
@@ -159,7 +165,7 @@ void startup(int argc, char **argv)
 {
 
   /* initialize the process table here */
-
+  
   /* Initialize the Ready list, Blocked list, etc. here */
 	readyQueue = pq_create();
   /* Initialize the interrupt vector here */
@@ -240,6 +246,32 @@ int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority
 	procTable[newPid].tag = tag;
 	procTable[newPid].isUsed = 1;
 	
+	int len = sizeof(char)*strlen(name)+5;
+	char * semName = (char*)malloc(len);
+	strcpy(semName,name);
+	strcat(semName,"Sem0");
+	semName[len] = '\0';
+	P1_SemCreate(semName,0,procTable[pid].childJoinSem0);
+	free(semName);
+	
+	len = sizeof(char)*strlen(name)+5;
+	char * semName1 = (char*)malloc(sizeof(char)*strlen(name)+5);
+	strcpy(semName1,name);
+	strcat(semName1,"Sem1");
+	semName1[len] = '\0';
+	P1_SemCreate(semName1,0,procTable[pid].childJoinSem1);
+	free(semName1);
+	
+	len = sizeof(char)*strlen(name)+12;
+	char * semName2 = (char*)malloc(sizeof(char)*strlen(name)+12);
+	strcpy(semName2,name);
+	strcat(semName2,"SemQuitable");
+	semName2[len] = '\0';
+	P1_SemCreate(semName2,0,procTable[pid].semQuitable);
+	free(semName2);
+	
+	
+	
     // more stuff here, e.g. allocate stack, page table, initialize context, etc.
 	//USLOSS_Console("Process %d, %s is in state %d during fork\n",newPid,name, procTable[newPid].state);
 	// allocate stack
@@ -295,14 +327,91 @@ void P1_Quit(int status) {
 	if(!inKernelMode()){
 		USLOSS_IllegalInstruction();
 	}else {
-		 // decrement procces counter
-		 // USLOSS_Console("Quiting PID %d\n", pid);
-		  numProcs--;
-		  procTable[pid].state =3;
+		
+		  //USLOSS_Console("Quiting PID %d\n", pid);
+		 procTable[pid].state =3;
+		 
+		 // set status before V
+		 procTable[pid].status = status;
+		 
+		 // P on the semaphore based on the tag
+		 if(procTable[pid].tag ==0){
+			P1_V(procTable[procTable[pid].pPID].childJoinSem0);
+		} else{
+			P1_V(procTable[procTable[pid].pPID].childJoinSem1);
+		}
+		 
+		 // P on semaphore allowing the finish of quit
+		 P1_P(procTable[pid].semQuitable);
+		 
+		// clear PCB at pid
+		procTable[pid].startFunc = NULL;
+		procTable[pid].startArg =  NULL;
+		procTable[pid].state = 2;
+		procTable[pid].priority = 0;
+		procTable[pid].tag = 0;
+		procTable[pid].pPID = -2;
+		procTable[pid].status = 0;
+		P1_SemFree(procTable[pid].childJoinSem0);
+		procTable[pid].childJoinSem0 = NULL;
+		P1_SemFree(procTable[pid].childJoinSem1);
+		procTable[pid].childJoinSem1 = NULL;
+		P1_SemFree(procTable[pid].semQuitable);
+		procTable[pid].semQuitable = NULL;
+		// TODO: disable interupts here?
+		procTable[pid].isUsed = 0;
+				 
+		// decrement procces counter
+		 numProcs--;
+		  
 	}
 	
  
 }
+
+int P1_Join(int tag, int *status){
+	
+	
+	// if current does not have children with matching tag return -1
+	int tagFlag = -1;
+	for(int i =0; i < P1_MAXPROC; i++){
+		if(procTable[i].pPID == pid && procTable[i].tag == tag){
+			tagFlag = i;
+			break;
+		}
+	}
+	if(tagFlag == -1){
+		return -1;
+	}
+		
+		
+	// get semaphore
+	// TODO: might have mutex problem here. can't manipulate child list multiple times at once.
+	// p that semaphore
+	if(tag ==0){
+		P1_P(procTable[pid].childJoinSem0);
+	} else{
+		P1_P(procTable[pid].childJoinSem1);
+	}
+	
+	// if tags are same and the child is waiting on sem
+	int joiningPID = -1;
+	for(int i =0; i < P1_MAXPROC; i++){
+		if(procTable[i].pPID == pid && procTable[i].tag == tag && procTable[i].state == 3){
+			joiningPID = i;
+			break;
+		}
+	}
+	// set status to status of returned child
+	*status = procTable[joiningPID].status;
+	P1_V(procTable[joiningPID].semQuitable);
+	return joiningPID;	
+	
+	
+}
+
+
+
 
 /* ------------------------------------------------------------------------
    Name - P1_GetState
@@ -401,7 +510,8 @@ int semTableSearch(char* name)
   //  -1 if the table does not contain a semaphore with the name passed in as argument .
   int i; for (i = 0; i<P1_MAXSEM ; i++)
   {
-    if (strcmp(semTable[i]->name,name) == 0) { return i;}
+	//USLOSS_Console("sem table name is %s\n",semTable[i]->name);
+    if ( semTable[i] != NULL && strcmp(semTable[i]->name,name) == 0) { return i;}
   }
   return -1;
 }
@@ -409,7 +519,11 @@ int semTableSearch(char* name)
 int findSemSpace()
 {
   // this function returns the index of the first open location in the semphore table. 
-  int i = 0; while (semTable[i] != NULL) { i++; } return i;
+  int i = 0;
+  while (semTable[i] != NULL) {
+	  i++; 
+	  }
+	  return i;
 }
 
 int procsBlockedOnSem(P1_Semaphore *sem)
@@ -435,10 +549,12 @@ int P1_SemCreate(char* name, unsigned int value, P1_Semaphore *sem)
 
 int P1_SemFree(P1_Semaphore sem)
 {
-  int inx  = semTableSearch(P1_GetName(sem));
+	char * name = P1_GetName(sem);
+  int inx  = semTableSearch(name);
   if (inx == -1)              { return -1; }
   if (procsBlockedOnSem(sem)) { return -2; }
   semTable[inx] = NULL;
+  free(name);
   free(sem);
   return 0;
 }

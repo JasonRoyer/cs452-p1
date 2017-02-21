@@ -16,9 +16,9 @@ void quiter(int interupt, void *arg) {
 
 int bad_child() {
     // set to user mode
-    USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT);
+    int i = USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT);
     if (USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE)
-        USLOSS_PsrSet(USLOSS_PsrGet() ^ USLOSS_PSR_CURRENT_MODE);
+      i=   USLOSS_PsrSet(USLOSS_PsrGet() ^ USLOSS_PSR_CURRENT_MODE);
     P1_Fork("bad process", bad_process, NULL, USLOSS_MIN_STACK, 2 , 0);
     USLOSS_Syscall(NULL);
     return 0;

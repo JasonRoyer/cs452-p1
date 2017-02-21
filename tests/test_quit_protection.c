@@ -12,9 +12,9 @@ void quiter(int interupt, void *arg)
 int P2_Startup(void *notused)
 {
     USLOSS_IntVec[USLOSS_SYSCALL_INT] = quiter;
-    USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT);
+    int i = USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT);
     if (USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE)
-        USLOSS_PsrSet(USLOSS_PsrGet() ^ USLOSS_PSR_CURRENT_MODE);
+      i =   USLOSS_PsrSet(USLOSS_PsrGet() ^ USLOSS_PSR_CURRENT_MODE);
 
     P1_Quit( 1 );
     USLOSS_Syscall(NULL);
