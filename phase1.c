@@ -101,6 +101,11 @@ void IllegalModeHandler(int, void*);
 int  inKernelMode();
 int  getNewPid();
 void wrapperFunc();
+// for interrupts. 
+void modInterrupt(int);
+void enableInterrupt();
+void disableInterrupt();
+int  currentInterruptStatus();
 
 /* -------------------------- Functions ----------------------------------- */
 /* ------------------------------------------------------------------------
@@ -239,8 +244,8 @@ int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority
 	numProcs++;
 	
     /* Load PCB block at pid with correct information */
-  procTable[newPid].startFunc = f;
-  procTable[newPid].startArg = arg;
+    procTable[newPid].startFunc = f;
+    procTable[newPid].startArg = arg;
 	procTable[newPid].state = 1;
 	procTable[newPid].priority = priority;
 	procTable[newPid].tag = tag;
@@ -366,7 +371,7 @@ void P1_Quit(int status) {
 		  
 	}
 	
- 
+
 }
 
 int P1_Join(int tag, int *status){
@@ -544,6 +549,7 @@ int P1_SemCreate(char* name, unsigned int value, P1_Semaphore *sem)
   newSem.q = pq_create();
   sem = (P1_Semaphore*) &newSem;
   semTable[inx] = &newSem;
+  semCount++;
   return 0;
 }
 
@@ -561,17 +567,50 @@ int P1_SemFree(P1_Semaphore sem)
 
 int P1_P(P1_Semaphore sem)
 {
+  // proberen
+  //
+
+  Semaphore * s = (Semaphore*) sem;
+  while (1)
+  {
+    disableInterrupt();
+    if (s->value > 0) { s->value--; break; } // break when value is positive. 
+    else
+    {
+      // otherwise we wait.
+      pq_remove(readyQueue, pid); 
+      pq_push(s->q, pid, 1); // pushing the pid on the semaphore queue. 
+      dispatcher();
+    }
+  }
+  enableInterrupt();
   return 0;
 }
 
 int P1_V(P1_Semaphore sem)
 {
-  return 0;
+  // verhogen
+  disableInterrupt();
+  Semaphore * s = ( Semaphore*) sem;
+  if (semTableSearch(s->name) == -1) { enableInterrupt(); return -1; }
+  else
+  {
+    s->value++;
+    if(!pq_isEmpty(s->q))
+    {
+      int temppid  = pq_pop(s->q);
+      pq_push(readyQueue,temppid,1);
+      dispatcher();
+    }
+    enableInterrupt(); return 0;
+  }
 }
 
 char *P1_GetName(P1_Semaphore sem)
 {
-  return 0;
+  Semaphore * s = (Semaphore*) sem;
+  char * retStr = strdup(s -> name);
+  return retStr;
 }
 
 /* ----------------- Functions to implement Queues -----------*/
@@ -606,27 +645,27 @@ void pq_push(priority_queue * pq, int pid, int priority)
 	  p_node * curr = pq->head;
 	  if(new->priority < curr->priority)
     {
-		// insert at head
-		new->next = pq->head;
-		pq->head = new;
+		  // insert at head
+		  new->next = pq->head;
+		  pq->head = new;
 	  }
     else 
     {
-		  // insert after head
-		  while (curr->next != NULL) 
+	  // insert after head
+	    while (curr->next != NULL) 
       {
-			  if(new->priority > curr->next->priority)
+        if(new->priority > curr->next->priority)
         {
-				  curr = curr->next;
-			  }
+  		    curr = curr->next;
+	  	  }
         else 
         {
-				  // insert it after curr
-				  new->next = curr->next;
-				  curr->next = new;
-				  return;
-			  }
-			}
+		      // insert it after curr
+		      new->next = curr->next;
+		      curr->next = new;
+		      return;
+		    }
+      }
 	  }
   }
   return;
@@ -646,13 +685,13 @@ void pq_print(priority_queue * pq)
 {
   // prints the contents of the priority queue 
   //  used for debugging
-	p_node * curr = pq-> head;
-	while(curr != NULL)
+  p_node * curr = pq-> head;
+  while(curr != NULL)
   {
-		USLOSS_Console(" %d(%d) | ", curr->pid,procTable[curr->pid].priority);
-		curr = curr->next;
-	}
-	USLOSS_Console("\n");
+	USLOSS_Console(" %d(%d) | ", curr->pid,procTable[curr->pid].priority);
+	curr = curr->next;
+  }
+  USLOSS_Console("\n");
 }
 
 void pq_remove(priority_queue * pq, int thePID)
@@ -660,27 +699,41 @@ void pq_remove(priority_queue * pq, int thePID)
   // removes an element from the queue by PID. 
   // technically breaches the definition of what a priority queue is, 
   // but we are the programmers now. 
-	if (pq->head->pid == thePID)
+  if (pq->head->pid == thePID)
   {
-		pq->head = pq->head->next;
-	}
+	pq->head = pq->head->next;
+  }
   else 
   {
-	  p_node * curr = pq->head;
-		while (curr->next != NULL) 
+    p_node * curr = pq->head;
+	  while (curr->next != NULL) 
     {
-			if(curr->next->pid == thePID)
+	    if(curr->next->pid == thePID)
       {
-				curr->next = curr->next->next;
-				return;
-			}
+	  	  curr->next = curr->next->next;
+		    return;
+	    }
       else 
       {
-				curr = curr->next;
-			}
-		}
-	}
+		    curr = curr->next;
+	    }
+	  }
+  }
 }
 // quick n dirty func to check if the queue is empty. 
 int pq_isEmpty(priority_queue* pq) {return (pq->head == NULL) ? 1 : 0;}
 
+
+// stuff for interrupts. 
+
+void modInterrupt(int x)
+{
+}
+
+void enableInterrupt()  { modInterrupt(1); return; } 
+void disableInterrupt() { modInterrupt(0); return; }
+
+int  currentInterruptStat()
+{
+  return 0 ; 
+}
