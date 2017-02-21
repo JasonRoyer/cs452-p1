@@ -233,8 +233,8 @@ int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority
 	numProcs++;
 	
     /* Load PCB block at pid with correct information */
-  procTable[newPid].startFunc = f;
-  procTable[newPid].startArg = arg;
+    procTable[newPid].startFunc = f;
+    procTable[newPid].startArg = arg;
 	procTable[newPid].state = 1;
 	procTable[newPid].priority = priority;
 	procTable[newPid].tag = tag;
@@ -299,9 +299,7 @@ void P1_Quit(int status) {
 		 // USLOSS_Console("Quiting PID %d\n", pid);
 		  numProcs--;
 		  procTable[pid].state =3;
-	}
-	
- 
+	} 
 }
 
 /* ------------------------------------------------------------------------
@@ -496,22 +494,22 @@ void pq_push(priority_queue * pq, int pid, int priority)
 	  }
     else 
     {
-		  // insert after head
-		  while (curr->next != NULL) 
+	  // insert after head
+	  while (curr->next != NULL) 
       {
-			  if(new->priority > curr->next->priority)
+        if(new->priority > curr->next->priority)
         {
-				  curr = curr->next;
-			  }
+		  curr = curr->next;
+		}
         else 
         {
-				  // insert it after curr
-				  new->next = curr->next;
-				  curr->next = new;
-				  return;
-			  }
-			}
-	  }
+		  // insert it after curr
+		  new->next = curr->next;
+		  curr->next = new;
+		  return;
+		}
+      }
+	}
   }
   return;
 } 
@@ -530,13 +528,13 @@ void pq_print(priority_queue * pq)
 {
   // prints the contents of the priority queue 
   //  used for debugging
-	p_node * curr = pq-> head;
-	while(curr != NULL)
+  p_node * curr = pq-> head;
+  while(curr != NULL)
   {
-		USLOSS_Console(" %d(%d) | ", curr->pid,procTable[curr->pid].priority);
-		curr = curr->next;
-	}
-	USLOSS_Console("\n");
+	USLOSS_Console(" %d(%d) | ", curr->pid,procTable[curr->pid].priority);
+	curr = curr->next;
+  }
+  USLOSS_Console("\n");
 }
 
 void pq_remove(priority_queue * pq, int thePID)
@@ -544,26 +542,26 @@ void pq_remove(priority_queue * pq, int thePID)
   // removes an element from the queue by PID. 
   // technically breaches the definition of what a priority queue is, 
   // but we are the programmers now. 
-	if (pq->head->pid == thePID)
+  if (pq->head->pid == thePID)
   {
-		pq->head = pq->head->next;
-	}
+	pq->head = pq->head->next;
+  }
   else 
   {
-	  p_node * curr = pq->head;
-		while (curr->next != NULL) 
+    p_node * curr = pq->head;
+	while (curr->next != NULL) 
     {
-			if(curr->next->pid == thePID)
+	  if(curr->next->pid == thePID)
       {
-				curr->next = curr->next->next;
-				return;
-			}
+	  	curr->next = curr->next->next;
+		return;
+	  }
       else 
       {
-				curr = curr->next;
-			}
-		}
+		curr = curr->next;
+	  }
 	}
+  }
 }
 // quick n dirty func to check if the queue is empty. 
 int pq_isEmpty(priority_queue* pq) {return (pq->head == NULL) ? 1 : 0;}
