@@ -262,12 +262,14 @@ int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority
 	strcpy(semName,name);
 	strcat(semName,"Sem0");
 	semName[len] = '\0';
+	USLOSS_Console(" About to create sem %s\n", semName);
 	P1_SemCreate(semName,0,&procTable[newPid].childJoinSem0);
 	free(semName);
-	USLOSS_Console("testing %d\n", newPid);
-	if(procTable[newPid].childJoinSem0 == NULL){
-		USLOSS_Console("Null after create\n");
+	if( procTable[newPid].childJoinSem0 == NULL){
+		USLOSS_Console("Null after create childJoinSem0\n");
 	}
+	USLOSS_Console(" Just created sem %s\n",  P1_GetName(procTable[newPid].childJoinSem0));
+	
 	len = sizeof(char)*strlen(name)+5;
 	char * semName1 = (char*)malloc(sizeof(char)*strlen(name)+5);
 	strcpy(semName1,name);
@@ -552,19 +554,20 @@ int procsBlockedOnSem(P1_Semaphore *sem)
   return pq_isEmpty(castSem->q) ? 0 : 1;
 }
 
-int P1_SemCreate(char* name, unsigned int value, P1_Semaphore *sem)
+int P1_SemCreate(char* name, unsigned int value, P1_Semaphore* sem)
 {
+
   if (semCount == P1_MAXSEM)      { return -2; }
   if (semTableSearch(name) != -1) { return -1; }
+  USLOSS_Console("Creating sem %s\n", name);
   int inx = findSemSpace();
   Semaphore newSem;// = malloc(sizeof(Semaphore));
   newSem.name = strdup(name);
+  USLOSS_Console("Struct name in sem %s\n", newSem.name);
   newSem.value = value;
   newSem.q = pq_create();
-  *sem = &newSem;
-  if(sem == NULL){
-		USLOSS_Console("sem is null IN CREATE\n");	
-	}
+  *sem = (P1_Semaphore*) &newSem;
+	//USLOSS_Console("sem pointer name is %s\n", P1_GetName(sem));	
   semTable[inx] = &newSem;
   semCount++;
   return 0;
@@ -572,10 +575,6 @@ int P1_SemCreate(char* name, unsigned int value, P1_Semaphore *sem)
 
 int P1_SemFree(P1_Semaphore sem)
 {
-	if(sem == NULL){
-		USLOSS_Console("sem is null man\n");	
-	}
-	USLOSS_Console("seg fault now in free\n");	
 	char * name = P1_GetName(sem);
   int inx  = semTableSearch(name);
   if (inx == -1)              { return -1; }
@@ -615,9 +614,7 @@ int P1_V(P1_Semaphore sem)
   disableInterrupt();
   USLOSS_Console("getting pased disable interrupt\n");	
   Semaphore * s = ( Semaphore*) &sem;
-  if(s == NULL){
-	  USLOSS_Console("Its null you fuck wod\n");	
-  }
+	USLOSS_Console("Ving %s\n", s->name);
   if (semTableSearch(s->name) == -1) { USLOSS_Console("We don't have this sem?!\n");	enableInterrupt(); return -1; }
   else
   {
