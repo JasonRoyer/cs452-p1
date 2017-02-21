@@ -18,6 +18,21 @@
 
 /* -------------------------- Globals ------------------------------------- */
 
+// semaphore struct along with global vars indicatin number of semaphors and a global semaphore table. 
+int semCount;
+typedef struct priority_queue priority_queue;
+typedef struct Semaphore Semaphore;
+
+struct  Semaphore
+{
+  int   value;
+  char*  name;
+  priority_queue * q;
+  
+};
+
+Semaphore *semTable[P1_MAXSEM];
+
 typedef struct PCB {
     USLOSS_Context      context;
     int                 (*startFunc)(void *);   /* Starting function */
@@ -65,14 +80,20 @@ priority_queue * readyQueue;
 static int sentinel(void *arg);
 static void launch(void);
 /* Declaration of function prototypes */
+
+// queue stuff
 void pq_push(priority_queue*, int, int);
 int pq_pop(priority_queue*);
 void pq_print(priority_queue*);
 void pq_remove(priority_queue*, int );
+int  pq_isEmpty(priority_queue*);
 priority_queue * pq_create();
+
+
+// OS stuff. 
 void IllegalModeHandler(int, void*);
-int inKernalMode();
-int getNewPid();
+int  inKernelMode();
+int  getNewPid();
 void wrapperFunc();
 
 /* -------------------------- Functions ----------------------------------- */
@@ -184,7 +205,7 @@ void finish(int argc, char **argv)
 int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority, int tag)
 {
 	// if in user mode throw illegal exception
-	if(!inKernalMode()){
+	if(!inKernelMode()){
 		USLOSS_IllegalInstruction();
 		return -5;
 	}
@@ -212,8 +233,8 @@ int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority
 	numProcs++;
 	
     /* Load PCB block at pid with correct information */
-    procTable[newPid].startFunc = f;
-    procTable[newPid].startArg = arg;
+  procTable[newPid].startFunc = f;
+  procTable[newPid].startArg = arg;
 	procTable[newPid].state = 1;
 	procTable[newPid].priority = priority;
 	procTable[newPid].tag = tag;
@@ -238,7 +259,7 @@ int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority
 	}
 	
 	
-    return newPid;
+  return newPid;
 } /* End of fork */
 
 /* ------------------------------------------------------------------------
@@ -271,7 +292,7 @@ void launch(void)
    Side Effects - the currently running process quits
    ------------------------------------------------------------------------ */
 void P1_Quit(int status) {
-	if(!inKernalMode()){
+	if(!inKernelMode()){
 		USLOSS_IllegalInstruction();
 	}else {
 		 // decrement procces counter
@@ -342,7 +363,7 @@ void IllegalModeHandler(int interupt, void *arg){
 		Since the 1st bit in the register is set to 1 if in kernal mode bitwise and the two togeather to see if in kernal mode.
   
   */
-int inKernalMode() { 
+int inKernelMode() { 
 	return USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE;
 }
 
@@ -368,12 +389,76 @@ void wrapperFunc(){
 	dispatcher();
 }
 
+/*
+ *  PHASE 1b.
+ */
 
+//// 5. Semaphore functions. 
+int semTableSearch(char* name)
+{
+  //  this function searches our table of semaphores. 
+  //  returns the integer index of the semaphore, 
+  //  -1 if the table does not contain a semaphore with the name passed in as argument .
+  int i; for (i = 0; i<P1_MAXSEM ; i++)
+  {
+    if (strcmp(semTable[i]->name,name) == 0) { return i;}
+  }
+  return -1;
+}
 
+int findSemSpace()
+{
+  // this function returns the index of the first open location in the semphore table. 
+  int i = 0; while (semTable[i] != NULL) { i++; } return i;
+}
+
+int procsBlockedOnSem(P1_Semaphore *sem)
+{
+  // this function checks to see if there are processes waiting on the semaphore.
+  Semaphore *castSem = (Semaphore* ) sem;
+  return pq_isEmpty(castSem->q) ? 0 : 1;
+}
+
+int P1_SemCreate(char* name, unsigned int value, P1_Semaphore *sem)
+{
+  if (semCount == P1_MAXSEM)      { return -2; }
+  if (semTableSearch(name) != -1) { return -1; }
+  int inx = findSemSpace();
+  newSem* = malloc(sizeof(Semaphore));
+  newSem -> name = strdup(name);
+  newSem -> value = value;
+  newSem -> q = pq_create();
+  sem = (P1_Semaphore) newSem;
+  semTable[inx] = newSem;
+  return 0;
+}
+
+int P1_SemFree(P1_Semaphore sem)
+{
+  int inx  = semTableSearch(P1_GetName(sem));
+  if (inx == -1)              { return -1; }
+  if (procsBlockedOnSem(sem)) { return -2; }
+  semTable[inx] = NULL;
+  free(sem);
+  return 0;
+}
+
+int P1_P(P1_Semaphore sem)
+{
+  return 0;
+}
+
+int P1_V(P1_Semaphore sem)
+{
+  return 0;
+}
+
+char *P1_GetName(P1_Semaphore sem)
+{
+  return 0;
+}
 
 /* ----------------- Functions to implement Queues -----------*/
-
-
 
 priority_queue * pq_create()
 {
@@ -382,7 +467,6 @@ priority_queue * pq_create()
   retq->head = NULL;
   return retq;
 }
-
 
 /* and here are some associated functions to help us use the queue */
 void pq_push(priority_queue * pq, int pid, int priority)
@@ -404,31 +488,30 @@ void pq_push(priority_queue * pq, int pid, int priority)
   else
   {
 	  p_node * curr = pq->head;
-	  if(new->priority < curr->priority){
+	  if(new->priority < curr->priority)
+    {
 		// insert at head
 		new->next = pq->head;
 		pq->head = new;
-	}
-  else 
-  {
-		// insert after head
-		while (curr->next != NULL) 
+	  }
+    else 
     {
-			if(new->priority > curr->next->priority)
+		  // insert after head
+		  while (curr->next != NULL) 
       {
-				curr = curr->next;
+			  if(new->priority > curr->next->priority)
+        {
+				  curr = curr->next;
+			  }
+        else 
+        {
+				  // insert it after curr
+				  new->next = curr->next;
+				  curr->next = new;
+				  return;
+			  }
 			}
-      else 
-      {
-				// insert it after curr
-				new->next = curr->next;
-				curr->next = new;
-				return;
-			}
-			
-		}
-	}
-	
+	  }
   }
   return;
 } 
@@ -482,6 +565,6 @@ void pq_remove(priority_queue * pq, int thePID)
 		}
 	}
 }
-
-
+// quick n dirty func to check if the queue is empty. 
+int pq_isEmpty(priority_queue* pq) {return (pq->head == NULL) ? 1 : 0;}
 
