@@ -31,7 +31,7 @@ struct  Semaphore
   
 };
 
-Semaphore *semTable[P1_MAXSEM];
+Semaphore* semTable[P1_MAXSEM];
 
 typedef struct PCB {
     USLOSS_Context      context;
@@ -50,9 +50,9 @@ typedef struct PCB {
 	int 	tag; /* The tag is either 0 or 1, and is used by P1_Join to wait for children with a matching tag. */
 	int 	pPID; /* The PID of the parent of this procces*/ 
 	int 	status; /* The status of the process once quit has been called*/
-	P1_Semaphore childJoinSem0; /* Semaphore keeping track of how many children have tag 0 and have quit*/
-	P1_Semaphore childJoinSem1;/* Semaphore keeping track of how many children have tag 1 and have quit*/
-	P1_Semaphore semQuitable;/* Semaphore keeping track if this procces can finish quiting*/
+	Semaphore * childJoinSem0; /* Semaphore keeping track of how many children have tag 0 and have quit*/
+	Semaphore* childJoinSem1;/* Semaphore keeping track of how many children have tag 1 and have quit*/
+	Semaphore* semQuitable;/* Semaphore keeping track if this procces can finish quiting*/
 } PCB;
 
 
@@ -180,14 +180,13 @@ void startup(int argc, char **argv)
   /* Initialize the interrupt vector here */
 	USLOSS_IntVec[USLOSS_ILLEGAL_INT] = IllegalModeHandler;
   /* Initialize the semaphores here */
-
   /* startup a sentinel process */
   pid = P1_Fork("sentinel", sentinel, NULL, USLOSS_MIN_STACK, 6, 0);
 	
   /* start the P2_Startup process */
   P1_Fork("P2_Startup", P2_Startup, NULL, 4 * USLOSS_MIN_STACK, 1, 0);
 
-  USLOSS_Console("calling dispatcher from startup\n");
+ USLOSS_Console("calling dispatcher from startup\n");
   dispatcher();
 
   /* Should never get here (sentinel will call USLOSS_Halt) */
@@ -257,34 +256,17 @@ int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority
 	procTable[newPid].isUsed = 1;
 	procTable[newPid].pPID = pid;
 	
-	int len = sizeof(char)*strlen(name)+5;
-	char * semName = (char*)malloc(len);
-	strcpy(semName,name);
-	strcat(semName,"Sem0");
-	semName[len] = '\0';
-	USLOSS_Console(" About to create sem %s\n", semName);
-	P1_SemCreate(semName,0,&procTable[newPid].childJoinSem0);
-	free(semName);
-	if( procTable[newPid].childJoinSem0 == NULL){
-		USLOSS_Console("Null after create childJoinSem0\n");
-	}
-	USLOSS_Console(" Just created sem %s\n",  P1_GetName(procTable[newPid].childJoinSem0));
+	char semName[7];
+	sprintf(semName, "%dSem0",newPid);
+	P1_SemCreate(semName,0, (P1_Semaphore *)&procTable[newPid].childJoinSem0);
 	
-	len = sizeof(char)*strlen(name)+5;
-	char * semName1 = (char*)malloc(sizeof(char)*strlen(name)+5);
-	strcpy(semName1,name);
-	strcat(semName1,"Sem1");
-	semName1[len] = '\0';
-	P1_SemCreate(semName1,0,&procTable[newPid].childJoinSem1);
-	free(semName1);
+	char semName1[7];
+	sprintf(semName1, "%dSem1",newPid);
+	P1_SemCreate(semName1,0,(P1_Semaphore *)&procTable[newPid].childJoinSem1);
 	
-	len = sizeof(char)*strlen(name)+12;
-	char * semName2 = (char*)malloc(sizeof(char)*strlen(name)+12);
-	strcpy(semName2,name);
-	strcat(semName2,"SemQuitable");
-	semName2[len] = '\0';
-	P1_SemCreate(semName2,0,&procTable[newPid].semQuitable);
-	free(semName2);
+	char semName2[17];
+	sprintf(semName2, "%dSemQuitable",newPid);
+	P1_SemCreate(semName2,0,(P1_Semaphore *)&procTable[newPid].semQuitable);
 	
 	
     // more stuff here, e.g. allocate stack, page table, initialize context, etc.
@@ -350,20 +332,18 @@ void P1_Quit(int status) {
 			 procTable[pid].status = status;
 			 
 			 // P on the semaphore based on the tag
-			 USLOSS_Console("Parrent ID is %d\n",procTable[pid].pPID);	
 			 if(procTable[pid].tag ==0){
-					USLOSS_Console("0 is null to v\n");	
+				 USLOSS_Console("Child %d Ved parent %d joinSem0\n", pid,procTable[pid].pPID);		 
 				P1_V(procTable[procTable[pid].pPID].childJoinSem0);
 			} else{
-					USLOSS_Console("1 is null to v\n");	
+				USLOSS_Console("Child %d Ved parent %d joinSem1\n", pid,procTable[pid].pPID);	
 				P1_V(procTable[procTable[pid].pPID].childJoinSem1);
 			}
-			 USLOSS_Console("Am i getting past the Ps?\n");	
 			 // P on semaphore allowing the finish of quit
-			 P1_P(procTable[pid].semQuitable);
-			 
+		USLOSS_Console(" Just above Quitable for pid %d\n", pid);	
+		P1_P(procTable[pid].semQuitable);
+		USLOSS_Console("Got past Quitable for pid %d\n", pid);		 
 		
-		USLOSS_Console("seg falut now after\n");	
 		// clear PCB at pid
 		procTable[pid].startFunc = NULL;
 		procTable[pid].startArg =  NULL;
@@ -391,7 +371,7 @@ void P1_Quit(int status) {
 
 int P1_Join(int tag, int *status){
 	
-	
+	USLOSS_Console("Join called from Parent %d\n", pid);	
 	// if current does not have children with matching tag return -1
 	int tagFlag = -1;
 	for(int i =0; i < P1_MAXPROC; i++){
@@ -401,6 +381,7 @@ int P1_Join(int tag, int *status){
 		}
 	}
 	if(tagFlag == -1){
+		USLOSS_Console("JOIN COULDNT FIND A CHILD WITH TAG\n");	
 		return -1;
 	}
 		
@@ -409,9 +390,13 @@ int P1_Join(int tag, int *status){
 	// TODO: might have mutex problem here. can't manipulate child list multiple times at once.
 	// p that semaphore
 	if(tag ==0){
+		USLOSS_Console("Just above childJoinSem0 for parent pid %d\n", pid);	
 		P1_P(procTable[pid].childJoinSem0);
+		USLOSS_Console("got past childJoinSem0 for parent pid %d\n", pid);
 	} else{
+		USLOSS_Console("Just above childJoinSem1 for parent pid %d\n", pid);
 		P1_P(procTable[pid].childJoinSem1);
+		USLOSS_Console("got past childJoinSem1 for parent pid %d\n", pid);
 	}
 	
 	// if tags are same and the child is waiting on sem
@@ -559,16 +544,14 @@ int P1_SemCreate(char* name, unsigned int value, P1_Semaphore* sem)
 
   if (semCount == P1_MAXSEM)      { return -2; }
   if (semTableSearch(name) != -1) { return -1; }
-  USLOSS_Console("Creating sem %s\n", name);
   int inx = findSemSpace();
-  Semaphore newSem;// = malloc(sizeof(Semaphore));
-  newSem.name = strdup(name);
-  USLOSS_Console("Struct name in sem %s\n", newSem.name);
-  newSem.value = value;
-  newSem.q = pq_create();
-  *sem = (P1_Semaphore*) &newSem;
+  Semaphore * newSem = (Semaphore*) malloc(sizeof(Semaphore));
+  newSem->name = strdup(name);
+  newSem->value = value;
+  newSem->q = pq_create();
+  *sem = (P1_Semaphore*) newSem;
 	//USLOSS_Console("sem pointer name is %s\n", P1_GetName(sem));	
-  semTable[inx] = &newSem;
+  semTable[inx] = newSem;
   semCount++;
   return 0;
 }
@@ -590,58 +573,58 @@ int P1_P(P1_Semaphore sem)
   // proberen
   //
 
-  Semaphore * s = (Semaphore*) &sem;
-  while (1)
-  {
-    disableInterrupt();
-    if (s->value > 0) { s->value--; break; } // break when value is positive. 
-    else
-    {
-      // otherwise we wait.
-      //pq_remove(readyQueue, pid); 
-      pq_push(s->q, pid, 1); // pushing the pid on the semaphore queue. 
-	  USLOSS_Console("calling dispatcher from P\n");
-      dispatcher();
-    }
-  }
-  enableInterrupt();
-  return 0;
+  Semaphore * s = (Semaphore*) sem;
+  if (semTableSearch(s->name) == -1) {
+	  return -1; 
+	} else{
+	  while(1) {
+			disableInterrupt();
+			if (s->value > 0) {
+				s->value--;
+				break;
+			}
+			//Move process from ready queue to s->q
+			procTable[pid].state = 4;
+			pq_push(s->q, pid, 1); // pushing the pid on the semaphore queue. 
+			enableInterrupt();
+			dispatcher();
+		}
+		USLOSS_Console("Broke out of P loop\n");
+		enableInterrupt();
+		return 0;
+	}
 }
 
 int P1_V(P1_Semaphore sem)
 {
-  // verhogen
-  disableInterrupt();
-  USLOSS_Console("getting pased disable interrupt\n");	
-  Semaphore * s = ( Semaphore*) &sem;
-	USLOSS_Console("Ving %s\n", s->name);
-  if (semTableSearch(s->name) == -1) { USLOSS_Console("We don't have this sem?!\n");	enableInterrupt(); return -1; }
-  else
-  {
-	  USLOSS_Console("Its a sem lets V it!\n");	
-    s->value++;
-    if(!pq_isEmpty(s->q))
-    {
-		USLOSS_Console("Narrow it down %d\n", s->q);
-		if (s->q->head == NULL){
-			USLOSS_Console("OMG IT:S NULL\n");
-		}
-		pq_print(s->q);
-      int temppid  = pq_pop(s->q);
-	  USLOSS_Console("poped ID should be %d\n", temppid);
-      pq_push(readyQueue,temppid,1);
-	  	
-      //dispatcher();
-    }
-    enableInterrupt();
-	return 0;
-  }
+	
+	Semaphore * s = (Semaphore*) sem;
+	USLOSS_Console("Ving %s\n", s->name);	
+  if (semTableSearch(s->name) == -1) {
+	  return -1; 
+	} else{
+	  disableInterrupt();
+	  
+	  s->value++;
+	  if(!pq_isEmpty(s->q)){
+		  USLOSS_Console("sem Q ---  ");	
+		  pq_print(s->q);
+		  USLOSS_Console("Pushing finished V\n");	
+		  pq_push(readyQueue,pq_pop(s->q),1);
+		  dispatcher();
+	  }
+	  enableInterrupt();
+	  return 0;
+	}
+  
+	
+  
 }
 
 char *P1_GetName(P1_Semaphore sem)
 {
   Semaphore * s = (Semaphore*) sem;
-  char * retStr = strdup(s -> name);
+  char * retStr = strdup((*s).name);
   return retStr;
 }
 
