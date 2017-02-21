@@ -424,12 +424,12 @@ int P1_SemCreate(char* name, unsigned int value, P1_Semaphore *sem)
   if (semCount == P1_MAXSEM)      { return -2; }
   if (semTableSearch(name) != -1) { return -1; }
   int inx = findSemSpace();
-  newSem* = malloc(sizeof(Semaphore));
-  newSem -> name = strdup(name);
-  newSem -> value = value;
-  newSem -> q = pq_create();
-  sem = (P1_Semaphore) newSem;
-  semTable[inx] = newSem;
+  Semaphore newSem;// = malloc(sizeof(Semaphore));
+  newSem.name = strdup(name);
+  newSem.value = value;
+  newSem.q = pq_create();
+  sem = (P1_Semaphore*) &newSem;
+  semTable[inx] = &newSem;
   return 0;
 }
 
