@@ -490,7 +490,8 @@ int P1_V(P1_Semaphore sem)
 
 char *P1_GetName(P1_Semaphore sem)
 {
-  char * retStr = strdup((Semaphore*) sem -> name);
+  Semaphore * s = (Semaphore*) sem;
+  char * retStr = strdup(s -> name);
   return retStr;
 }
 
