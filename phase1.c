@@ -95,6 +95,11 @@ void IllegalModeHandler(int, void*);
 int  inKernelMode();
 int  getNewPid();
 void wrapperFunc();
+// for interrupts. 
+void modInterrupt(int);
+void enableInterrupt();
+void disableInterrupt();
+int  currentInterruptStatus();
 
 /* -------------------------- Functions ----------------------------------- */
 /* ------------------------------------------------------------------------
@@ -428,6 +433,7 @@ int P1_SemCreate(char* name, unsigned int value, P1_Semaphore *sem)
   newSem.q = pq_create();
   sem = (P1_Semaphore*) &newSem;
   semTable[inx] = &newSem;
+  semCount++;
   return 0;
 }
 
@@ -597,3 +603,17 @@ void pq_remove(priority_queue * pq, int thePID)
 // quick n dirty func to check if the queue is empty. 
 int pq_isEmpty(priority_queue* pq) {return (pq->head == NULL) ? 1 : 0;}
 
+
+// stuff for interrupts. 
+
+void modInterrupt(int x)
+{
+}
+
+void enableInterrupt()  { modInterrupt(1); return; } 
+void disableInterrupt() { modInterrupt(0); return; }
+
+int  currentInterruptStat()
+{
+  return 0 ; 
+}
