@@ -453,7 +453,8 @@ int P1_V(P1_Semaphore sem)
 
 char *P1_GetName(P1_Semaphore sem)
 {
-  return 0;
+  retStr = strdup((Semaphore*) sem -> name);
+  return retStr;
 }
 
 /* ----------------- Functions to implement Queues -----------*/
@@ -488,28 +489,28 @@ void pq_push(priority_queue * pq, int pid, int priority)
 	  p_node * curr = pq->head;
 	  if(new->priority < curr->priority)
     {
-		// insert at head
-		new->next = pq->head;
-		pq->head = new;
+		  // insert at head
+		  new->next = pq->head;
+		  pq->head = new;
 	  }
     else 
     {
 	  // insert after head
-	  while (curr->next != NULL) 
+	    while (curr->next != NULL) 
       {
         if(new->priority > curr->next->priority)
         {
-		  curr = curr->next;
-		}
+  		    curr = curr->next;
+	  	  }
         else 
         {
-		  // insert it after curr
-		  new->next = curr->next;
-		  curr->next = new;
-		  return;
-		}
+		      // insert it after curr
+		      new->next = curr->next;
+		      curr->next = new;
+		      return;
+		    }
       }
-	}
+	  }
   }
   return;
 } 
