@@ -116,9 +116,13 @@ void illegalHandler(int dev, void *arg);
 // device semaphores.   
 P1_Semaphore *clockSem;
 P1_Semaphore *alarmSem;
-P1_Semaphore *termSem;
-P1_Semaphore *diskSem;
-
+P1_Semaphore *term0Sem;
+P1_Semaphore *term1Sem;
+P1_Semaphore *term2Sem;
+P1_Semaphore *term3Sem;
+P1_Semaphore *disk0Sem;
+P1_Semaphore *disk1Sem;
+P1_Semaphore *pseudoClockSem;
 int tickLimit; /// used by our clock handler 
 /* -------------------------- Functions ----------------------------------- */
 /* ------------------------------------------------------------------------
@@ -202,11 +206,16 @@ void startup(int argc, char **argv)
   /* Initialize the semaphores here */
 
   //device semaphores
-  int semrc = 0; // retcodes for semaphore creation. 
-  semrc += P1_SemCreate("pseudoclock",0,clockSem);
+  int semrc = 0; // retcodes for semaphore creation.
+  semrc += P1_SemCreate("pseudoclock",0,pseudoClockSem); 
+  semrc += P1_SemCreate("clockSem",0,clockSem);
   semrc += P1_SemCreate("alarmSem",0,alarmSem);
-  semrc += P1_SemCreate("termSem",0,termSem);
-  semrc += P1_SemCreate("diskSem",0,diskSem);
+  semrc += P1_SemCreate("term0Sem",0,term0Sem);
+  semrc += P1_SemCreate("term1Sem",0,term1Sem);
+  semrc += P1_SemCreate("term2Sem",0,term2Sem);
+  semrc += P1_SemCreate("term3Sem",0,term3Sem);
+  semrc += P1_SemCreate("disk0Sem",0,disk0Sem);
+  semrc += P1_SemCreate("disk1Sem",0,disk1Sem);
   if ( semrc != 0 ) 
   { 
     USLOSS_Console("STARTUP: error creating dev sems!\n");
@@ -504,10 +513,6 @@ int sentinel (void *notused)
     return 0;
 } /* End of sentinel */
 
-
-
-
-
 /* ---------------- Helper Functions ---------------- */
 
 /*    USLOSS_PsrGet() returns the register that checks for modes and interupt handlers
@@ -598,7 +603,7 @@ int P1_SemCreate(char* name, unsigned int value, P1_Semaphore* sem)
   USLOSS_Console("Struct name in sem %s\n", newSem.name);
   newSem.value = value;
   newSem.q = pq_create();
-  *sem = (P1_Semaphore*) &newSem;
+  P1_Semaphore * sem = (P1_Semaphore*) &newSem;
 	//USLOSS_Console("sem pointer name is %s\n", P1_GetName(sem));	
   semTable[inx] = &newSem;
   semCount++;
@@ -794,6 +799,9 @@ int pq_isEmpty(priority_queue* pq) {
 
 void modInterrupt(int x)
 {
+  int result = x ? (USLOSS_PsrGet() | USLOSS_PSR_CURR_INT) : USLOSS_PsrGet() & !USLOSS_PSR_CURR_INT; 
+  USLOSS_PsrSet(result);
+  return;
 }
 
 void enableInterrupt()  { modInterrupt(1); return; } 
@@ -808,7 +816,54 @@ int  currentInterruptStat()
 int P1_WaitDevice(int type, int unit, int *status)i
 {
   disableInterrupt();
+  kernelModeCheck();
+  switch(type)
+  {
+    case USLOSS_CLOCK_DEV:
+      if (unit == 0) 
+      {
+          P1_P(clockSem);
+      }
+      else {return -1;} // clock only has  one unit
+      break;
+    case USLOSS_ALARM_DEV:
+      if(unit==0)
+      {
+        P1_P(alarmSem);
 
+      }
+      else { return -1; }
+      break;
+    case USLOSS_TERM_DEV:
+      switch(unit)
+      {
+        // four terminals
+        case 0:
+          P1_P(term0Sem);
+          break;
+        case 1:
+          P1_P(term1Sem);
+          break;
+        case 2:
+          P1_P(term2Sem);
+          break;
+        case 3:
+          P1_P(term3Sem);
+          break;
+        default:
+          return -1;
+      }
+      break;
+    case USLOSS_DISK_DEV:
+      switch(unit)
+      {
+      }
+      break;
+    default:
+      return -2; //if none of the above, invalid device type!
+  }
+  enableInterrupt();
+  return 0;
 }
 
 // The handlers themselves.
@@ -819,12 +874,12 @@ void clockHandler(int dev, void * arg)
   if (clockCount == tickLimit)
   {
     clockCount = 0;
-    int result; int* totaltime;
+    int result; int* stat;
     //make sure device is ready
-    result = USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, totaltime);
+    result = USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, stat);
     if (result != USLOSS_DEV_OK)
     { USLOSS_Console("CLOCK PROBLEM! BYE"); USLOSS_Halt(1);}
-    P1_V(clockSem);
+    P1_V(pseudoClockSem);
     dispatcher();
   }
   return;
@@ -832,25 +887,26 @@ void clockHandler(int dev, void * arg)
 
 void alarmHandler(int dev, void *arg)
 {
-  USLOSS_Console("implement me!\n");
-  return;
-}
-
-void diskHandler(int dev, void *arg)
-{
-  USLOSS_Console("implement me!\n");
+  USLOSS_Console("ALARM:implement me!\n");
   return;
 }
 
 void termHandler(int dev, void * arg)
 {
-  USLOSS_Console("implement me!\n");
+  USLOSS_Console("TERM:implement me!\n");
+  return;
+}
+
+void diskHandler(int dev, void *arg)
+{
+  USLOSS_Console("DISK:implement me!\n");
   return;
 }
 
 void syscallHandler(int dev, void * arg)
 {
-  USLOSS_Console("implement me!\n");
+  USLOSS_Console("NOT IMPLEMENTED IN 1B\n");
+  USLOSS_IllegalInstruction();
   return;
 }
 
