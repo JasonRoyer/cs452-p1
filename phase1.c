@@ -31,7 +31,7 @@ struct  Semaphore
   
 };
 
-Semaphore *semTable[P1_MAXSEM];
+Semaphore* semTable[P1_MAXSEM];
 
 typedef struct PCB {
     USLOSS_Context      context;
@@ -47,12 +47,15 @@ typedef struct PCB {
 					*/
 	int 	isUsed;  /* Notes if the process space is free to be used. 0 = free 1 = being used*/
 	int 	priority; /* The priority of the process (highest priority is 1,lowest priority is 6) */
+	USLOSS_PTE *pagetable;
+	int pagetableINT;
+	int stateReady;
 	int 	tag; /* The tag is either 0 or 1, and is used by P1_Join to wait for children with a matching tag. */
 	int 	pPID; /* The PID of the parent of this procces*/ 
 	int 	status; /* The status of the process once quit has been called*/
-	P1_Semaphore childJoinSem0; /* Semaphore keeping track of how many children have tag 0 and have quit*/
-	P1_Semaphore childJoinSem1;/* Semaphore keeping track of how many children have tag 1 and have quit*/
-	P1_Semaphore semQuitable;/* Semaphore keeping track if this procces can finish quiting*/
+	Semaphore * childJoinSem0; /* Semaphore keeping track of how many children have tag 0 and have quit*/
+	Semaphore* childJoinSem1;/* Semaphore keeping track of how many children have tag 1 and have quit*/
+	Semaphore* semQuitable;/* Semaphore keeping track if this procces can finish quiting*/
 } PCB;
 
 
@@ -146,10 +149,10 @@ void dispatcher()
 	}
 	*/
 	
-	USLOSS_Console("PID %d coming into dispatcher\n",pid);	
-	if(pid != -1 && procTable[pid].state == 0 ){
-		// place current back into queue	
-		USLOSS_Console("pushing PID %d onto queue\n",pid);		
+	   //USLOSS_Console("PID %d coming into dispatcher with state %d\n",pid,procTable[pid].state);	
+	if(pid != -1 && (procTable[pid].state == 0 || procTable[pid].state == 3) ){
+		// place current back into queue	(procTable[pid].state == 0 || procTable[pid].state == 3)
+		   //USLOSS_Console("pushing PID %d onto queue\n",pid);		
 		pq_push(readyQueue,pid,procTable[pid].priority);
 	}	
 	pq_print(readyQueue);
@@ -160,18 +163,18 @@ void dispatcher()
 	procTable[pid].state = 0; // mark new as running
 	
 	if(startUP == 1){
-		// if it's first proccess launch it
+		// if it's first proccess launch it 
 		startUP = 0;
-		USLOSS_Console("Launching PID %d\n",pid);	
+		   //USLOSS_Console("Launching PID %d\n",pid);	
 		launch();
 	}else if(oldPID != pid){
 		if(procTable[oldPID].state != 3){
 			procTable[oldPID].state = 1; // state 1 means it's ready to run.		
 		}
 		// if it's not the same procces switch them.
-		USLOSS_Console("Switching to PID %d\n",pid);		
+		   //USLOSS_Console("Switching to PID %d\n",pid);		
 		USLOSS_ContextSwitch(&procTable[oldPID].context,&procTable[pid].context);
-		USLOSS_Console("i switched to new proccess\n");
+		   //USLOSS_Console("i switched to new proccess\n");
 	}
 	// start here
 	
@@ -204,7 +207,7 @@ void startup(int argc, char **argv)
   USLOSS_IntVec[USLOSS_SYSCALL_INT] = syscallHandler;
   USLOSS_IntVec[USLOSS_ILLEGAL_INT] = illegalHandler;
   /* Initialize the semaphores here */
-
+  
   //device semaphores
   int semrc = 0; // retcodes for semaphore creation.
   semrc += P1_SemCreate("pseudoclock",0,pseudoClockSem); 
@@ -221,14 +224,13 @@ void startup(int argc, char **argv)
     USLOSS_Console("STARTUP: error creating dev sems!\n");
     USLOSS_Halt(1);
   } 
-
   /* startup a sentinel process */
   pid = P1_Fork("sentinel", sentinel, NULL, USLOSS_MIN_STACK, 6, 0);
 	
   /* start the P2_Startup process */
   P1_Fork("P2_Startup", P2_Startup, NULL, 4 * USLOSS_MIN_STACK, 1, 0);
 
-  USLOSS_Console("calling dispatcher from startup\n");
+    //USLOSS_Console("calling dispatcher from startup\n");
   dispatcher();
 
   /* Should never get here (sentinel will call USLOSS_Halt) */
@@ -245,7 +247,7 @@ void startup(int argc, char **argv)
    ----------------------------------------------------------------------- */
 void finish(int argc, char **argv)
 {
-  USLOSS_Console("Goodbye.\n");
+     //USLOSS_Console("Goodbye.\n");
 } /* End of finish */
 
 /* ------------------------------------------------------------------------
@@ -298,44 +300,30 @@ int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority
 	procTable[newPid].isUsed = 1;
 	procTable[newPid].pPID = pid;
 	
-	int len = sizeof(char)*strlen(name)+5;
-	char * semName = (char*)malloc(len);
-	strcpy(semName,name);
-	strcat(semName,"Sem0");
-	semName[len] = '\0';
-	USLOSS_Console(" About to create sem %s\n", semName);
-	P1_SemCreate(semName,0,&procTable[newPid].childJoinSem0);
-	free(semName);
-	if( procTable[newPid].childJoinSem0 == NULL){
-		USLOSS_Console("Null after create childJoinSem0\n");
-	}
-	USLOSS_Console(" Just created sem %s\n",  P1_GetName(procTable[newPid].childJoinSem0));
+	char semName[7];
+	sprintf(semName, "%dSem0",newPid);
+	P1_SemCreate(semName,0, (P1_Semaphore *)&procTable[newPid].childJoinSem0);
 	
-	len = sizeof(char)*strlen(name)+5;
-	char * semName1 = (char*)malloc(sizeof(char)*strlen(name)+5);
-	strcpy(semName1,name);
-	strcat(semName1,"Sem1");
-	semName1[len] = '\0';
-	P1_SemCreate(semName1,0,&procTable[newPid].childJoinSem1);
-	free(semName1);
+	char semName1[7];
+	sprintf(semName1, "%dSem1",newPid);
+	P1_SemCreate(semName1,0,(P1_Semaphore *)&procTable[newPid].childJoinSem1);
 	
-	len = sizeof(char)*strlen(name)+12;
-	char * semName2 = (char*)malloc(sizeof(char)*strlen(name)+12);
-	strcpy(semName2,name);
-	strcat(semName2,"SemQuitable");
-	semName2[len] = '\0';
-	P1_SemCreate(semName2,0,&procTable[newPid].semQuitable);
-	free(semName2);
+	char semName2[17];
+	sprintf(semName2, "%dSemQuitable",newPid);
+	P1_SemCreate(semName2,0,(P1_Semaphore *)&procTable[newPid].semQuitable);
 	
 	
     // more stuff here, e.g. allocate stack, page table, initialize context, etc.
-	//USLOSS_Console("Process %d, %s is in state %d during fork\n",newPid,name, procTable[newPid].state);
+	//   //USLOSS_Console("Process %d, %s is in state %d during fork\n",newPid,name, procTable[newPid].state);
 	// allocate stack
 	char * stack = malloc(stacksize*sizeof(char));
 	// allocate page table
-	USLOSS_PTE *pagetable = P3_AllocatePageTable(newPid);
+	if (procTable[newPid].pagetableINT != 1){
+		procTable[newPid].pagetableINT=1;
+		procTable[newPid].pagetable= P3_AllocatePageTable(newPid);
+	}
 	// initialize context with wraper function 
-	USLOSS_ContextInit(&procTable[newPid].context, stack, stacksize, pagetable, wrapperFunc);
+	USLOSS_ContextInit(&procTable[newPid].context, stack, stacksize, procTable[newPid].pagetable, wrapperFunc);
 	
 	// push the new process into the readyQueue
 	pq_push(readyQueue,newPid,priority);
@@ -343,7 +331,7 @@ int P1_Fork(char *name, int (*f)(void *), void *arg, int stacksize, int priority
 	// call the dispatcher incase we need to switch to the new process
 	
 	if(numProcs >1){
-		USLOSS_Console("calling dispatcher from fork\n");
+		   //USLOSS_Console("calling dispatcher from fork\n");
 		dispatcher();
 	}
 	
@@ -365,7 +353,7 @@ void launch(void)
   int  status;
   status = USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT);
   if (status != 0) {
-      USLOSS_Console("USLOSS_PsrSet failed: %d\n", status);
+         //USLOSS_Console("USLOSS_PsrSet failed: %d\n", status);
       USLOSS_Halt(1);
   }
   rc = procTable[pid].startFunc(procTable[pid].startArg);
@@ -385,26 +373,25 @@ void P1_Quit(int status) {
 		USLOSS_IllegalInstruction();
 	}else {
 		
-		  USLOSS_Console("Quiting PID %d\n", pid);
-		 procTable[pid].state =3;
+		     //USLOSS_Console("Quiting PID %d\n", pid);
+		 
 			 // set status before V
 			 procTable[pid].status = status;
-			 
+			 procTable[pid].state =3;
+			 procTable[pid].stateReady = 1;
 			 // P on the semaphore based on the tag
-			 USLOSS_Console("Parrent ID is %d\n",procTable[pid].pPID);	
 			 if(procTable[pid].tag ==0){
-					USLOSS_Console("0 is null to v\n");	
+				  //  //USLOSS_Console("Child %d Ved parent %d joinSem0\n", pid,procTable[pid].pPID);		 
 				P1_V(procTable[procTable[pid].pPID].childJoinSem0);
 			} else{
-					USLOSS_Console("1 is null to v\n");	
+				  // //USLOSS_Console("Child %d Ved parent %d joinSem1\n", pid,procTable[pid].pPID);	
 				P1_V(procTable[procTable[pid].pPID].childJoinSem1);
 			}
-			 USLOSS_Console("Am i getting past the Ps?\n");	
 			 // P on semaphore allowing the finish of quit
-			 P1_P(procTable[pid].semQuitable);
-			 
+		  // //USLOSS_Console(" Just above Quitable for pid %d\n", pid);	
+		P1_P(procTable[pid].semQuitable);
+		 //  //USLOSS_Console("Got past Quitable for pid %d\n", pid);		 
 		
-		USLOSS_Console("seg falut now after\n");	
 		// clear PCB at pid
 		procTable[pid].startFunc = NULL;
 		procTable[pid].startArg =  NULL;
@@ -424,7 +411,7 @@ void P1_Quit(int status) {
 				 
 		// decrement procces counter
 		 numProcs--;
-		  USLOSS_Console("Quit success\n");	
+		     //USLOSS_Console("Quit success\n\n\n\n\n\n###############\n\n");	
 	}
 	
 
@@ -432,7 +419,7 @@ void P1_Quit(int status) {
 
 int P1_Join(int tag, int *status){
 	
-	
+	   //USLOSS_Console("Join called from Parent %d\n", pid);	
 	// if current does not have children with matching tag return -1
 	int tagFlag = -1;
 	for(int i =0; i < P1_MAXPROC; i++){
@@ -442,6 +429,7 @@ int P1_Join(int tag, int *status){
 		}
 	}
 	if(tagFlag == -1){
+		  // //USLOSS_Console("JOIN COULDNT FIND A CHILD WITH TAG\n");	
 		return -1;
 	}
 		
@@ -450,22 +438,37 @@ int P1_Join(int tag, int *status){
 	// TODO: might have mutex problem here. can't manipulate child list multiple times at once.
 	// p that semaphore
 	if(tag ==0){
+		 //  //USLOSS_Console("Just above childJoinSem0 for parent pid %d\n", pid);	
 		P1_P(procTable[pid].childJoinSem0);
+		 //  //USLOSS_Console("got past childJoinSem0 for parent pid %d\n", pid);
 	} else{
+		 //  //USLOSS_Console("Just above childJoinSem1 for parent pid %d\n", pid);
 		P1_P(procTable[pid].childJoinSem1);
+		 //  //USLOSS_Console("got past childJoinSem1 for parent pid %d\n", pid);
 	}
 	
 	// if tags are same and the child is waiting on sem
 	int joiningPID = -1;
 	for(int i =0; i < P1_MAXPROC; i++){
-		if(procTable[i].pPID == pid && procTable[i].tag == tag && procTable[i].state == 3){
-			joiningPID = i;
-			break;
+		if(procTable[i].pPID == pid){
+			if (procTable[i].tag == tag){
+				if (procTable[i].state == 3 && procTable[i].stateReady == 1){
+					procTable[i].stateReady = 0;
+					joiningPID = i;
+					break;
+				} 
+			}
+			
 		}
 	}
 	// set status to status of returned child
-	*status = procTable[joiningPID].status;
+	if(joiningPID != -1){
+		*status = procTable[joiningPID].status;
 	P1_V(procTable[joiningPID].semQuitable);
+	} else {
+		   //USLOSS_Console("joining id is -1\n");
+	}
+	
 	return joiningPID;	
 	
 	
@@ -502,7 +505,7 @@ int P1_GetPID(){
    ----------------------------------------------------------------------- */
 int sentinel (void *notused)
 {
-	USLOSS_Console("In sentinel numProcs is %d\n", numProcs);
+	   //USLOSS_Console("In sentinel numProcs is %d\n", numProcs);
     while (numProcs > 1)
     {
         /* Check for deadlock here */
@@ -552,7 +555,7 @@ int getNewPid(){
 */
 void wrapperFunc(){
 	P1_Quit(procTable[pid].startFunc((procTable[pid].startArg)));
-	USLOSS_Console("calling dispatcher from wrapper function\n");
+	  // //USLOSS_Console("calling dispatcher from wrapper function\n");
 	dispatcher();
 }
 
@@ -568,7 +571,7 @@ int semTableSearch(char* name)
   //  -1 if the table does not contain a semaphore with the name passed in as argument .
   int i; for (i = 0; i<P1_MAXSEM ; i++)
   {
-	//USLOSS_Console("sem table name is %s\n",semTable[i]->name);
+	//   //USLOSS_Console("sem table name is %s\n",semTable[i]->name);
     if ( semTable[i] != NULL && strcmp(semTable[i]->name,name) == 0) { return i;}
   }
   return -1;
@@ -596,16 +599,14 @@ int P1_SemCreate(char* name, unsigned int value, P1_Semaphore* sem)
 
   if (semCount == P1_MAXSEM)      { return -2; }
   if (semTableSearch(name) != -1) { return -1; }
-  USLOSS_Console("Creating sem %s\n", name);
   int inx = findSemSpace();
-  Semaphore newSem;// = malloc(sizeof(Semaphore));
-  newSem.name = strdup(name);
-  USLOSS_Console("Struct name in sem %s\n", newSem.name);
-  newSem.value = value;
-  newSem.q = pq_create();
-  P1_Semaphore * sem = (P1_Semaphore*) &newSem;
-	//USLOSS_Console("sem pointer name is %s\n", P1_GetName(sem));	
-  semTable[inx] = &newSem;
+  Semaphore * newSem = (Semaphore*) malloc(sizeof(Semaphore));
+  newSem->name = strdup(name);
+  newSem->value = value;
+  newSem->q = pq_create();
+  *sem = (P1_Semaphore*) newSem;
+	//   //USLOSS_Console("sem pointer name is %s\n", P1_GetName(sem));	
+  semTable[inx] = newSem;
   semCount++;
   return 0;
 }
@@ -627,58 +628,64 @@ int P1_P(P1_Semaphore sem)
   // proberen
   //
 
-  Semaphore * s = (Semaphore*) &sem;
-  while (1)
-  {
-    disableInterrupt();
-    if (s->value > 0) { s->value--; break; } // break when value is positive. 
-    else
-    {
-      // otherwise we wait.
-      //pq_remove(readyQueue, pid); 
-      pq_push(s->q, pid, 1); // pushing the pid on the semaphore queue. 
-	  USLOSS_Console("calling dispatcher from P\n");
-      dispatcher();
-    }
-  }
-  enableInterrupt();
-  return 0;
+  Semaphore * s = (Semaphore*) sem;
+  if (semTableSearch(s->name) == -1) {
+	  return -1; 
+	} else{
+	  while(1) {
+			disableInterrupt();
+			if (s->value > 0) {
+				s->value--;
+				break;
+			}
+			//Move process from ready queue to s->q
+			if(procTable[pid].state != 3){
+				
+			procTable[pid].state = 4;
+			}
+			pq_push(s->q, pid, 1); // pushing the pid on the semaphore queue. 
+			enableInterrupt();
+			dispatcher();
+		}
+		 //  //USLOSS_Console("Broke out of P loop\n");
+		enableInterrupt();
+		return 0;
+	}
 }
 
 int P1_V(P1_Semaphore sem)
 {
-  // verhogen
-  disableInterrupt();
-  USLOSS_Console("getting pased disable interrupt\n");	
-  Semaphore * s = ( Semaphore*) &sem;
-	USLOSS_Console("Ving %s\n", s->name);
-  if (semTableSearch(s->name) == -1) { USLOSS_Console("We don't have this sem?!\n");	enableInterrupt(); return -1; }
-  else
-  {
-	  USLOSS_Console("Its a sem lets V it!\n");	
-    s->value++;
-    if(!pq_isEmpty(s->q))
-    {
-		USLOSS_Console("Narrow it down %d\n", s->q);
-		if (s->q->head == NULL){
-			USLOSS_Console("OMG IT:S NULL\n");
-		}
-		pq_print(s->q);
-      int temppid  = pq_pop(s->q);
-	  USLOSS_Console("poped ID should be %d\n", temppid);
-      pq_push(readyQueue,temppid,1);
-	  	
-      //dispatcher();
-    }
-    enableInterrupt();
-	return 0;
-  }
+	
+	Semaphore * s = (Semaphore*) sem;
+	 //  //USLOSS_Console("Ving %s\n", s->name);	
+  if (semTableSearch(s->name) == -1) {
+	  return -1; 
+	} else{
+	  disableInterrupt();
+	  
+	  s->value++;
+	  if(!pq_isEmpty(s->q)){
+		  //   //USLOSS_Console("sem Q ---  ");	
+		  pq_print(s->q);
+		    // //USLOSS_Console("Pushing finished V\n");
+			int localPID = pq_pop(s->q);
+		  pq_push(readyQueue,localPID,1);//procTable[localPID].priority);
+		     //USLOSS_Console("NEW QUEUE AFTER V current PID %d in state %d\n", pid, procTable[pid].state);
+		  pq_print(readyQueue);
+		  dispatcher();
+	  }
+	  enableInterrupt();
+	  return 0;
+	}
+  
+	
+  
 }
 
 char *P1_GetName(P1_Semaphore sem)
 {
   Semaphore * s = (Semaphore*) sem;
-  char * retStr = strdup(s -> name);
+  char * retStr = strdup((*s).name);
   return retStr;
 }
 
@@ -712,7 +719,7 @@ void pq_push(priority_queue * pq, int pid, int priority)
   else
   {
 	  p_node * curr = pq->head;
-	  if(new->priority < curr->priority)
+	  if(new->priority <= curr->priority)
     {
 		  // insert at head
 		  new->next = pq->head;
@@ -757,10 +764,10 @@ void pq_print(priority_queue * pq)
   p_node * curr = pq-> head;
   while(curr != NULL)
   {
-	USLOSS_Console(" %d(%d) | ", curr->pid,procTable[curr->pid].priority);
+	   //USLOSS_Console(" %d(%d) | ", curr->pid,procTable[curr->pid].priority);
 	curr = curr->next;
   }
-  USLOSS_Console("\n");
+     //USLOSS_Console("\n");
 }
 
 void pq_remove(priority_queue * pq, int thePID)
@@ -830,7 +837,6 @@ int P1_WaitDevice(int type, int unit, int *status)i
       if(unit==0)
       {
         P1_P(alarmSem);
-
       }
       else { return -1; }
       break;
@@ -857,13 +863,22 @@ int P1_WaitDevice(int type, int unit, int *status)i
     case USLOSS_DISK_DEV:
       switch(unit)
       {
+        // two disks
+        case 0:
+          P1_P(disk0Sem);
+          break;
+        case 1:
+          P1_P(disk1Sem);
+          break;
+        default:
+          return -1;
       }
       break;
     default:
       return -2; //if none of the above, invalid device type!
   }
   enableInterrupt();
-  return 0;
+  return 0; // if we are here, success!
 }
 
 // The handlers themselves.
