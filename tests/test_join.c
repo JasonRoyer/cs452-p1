@@ -17,9 +17,13 @@ int P2_Startup(void *notused)
             pids[j] = P1_Fork("Child", Child, (void *) j, USLOSS_MIN_STACK, 3, 0);
             assert(pids[j] >= 0);
         }
+		 for (int j = 0; j < NUM; j++) {
+			  USLOSS_Console("%d\n", pids[j]);
+		 }
         for (int j = 0; j < NUM; j++) {
             int pid;
             pid = P1_Join(0, &status);
+			USLOSS_Console("Join RETURNED %d\n", pid);	
             assert(pid >= 0);
             int found = 0;
             for (int k = 0; k < NUM; k++) {
