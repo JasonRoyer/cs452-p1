@@ -19,7 +19,7 @@
 /* -------------------------- Globals ------------------------------------- */
 
 // semaphore struct along with global vars indicatin number of semaphors and a global semaphore table. 
-int semCount =0;;
+int semCount;
 typedef struct priority_queue priority_queue;
 typedef struct Semaphore Semaphore;
 
@@ -80,8 +80,6 @@ typedef struct priority_queue
 
 } priority_queue;
 
-
-
 /* The Queue of process ready to run. Functions defined at bottom of file */
 priority_queue * readyQueue;
 
@@ -99,8 +97,8 @@ priority_queue * pq_create();
 
 
 // OS stuff. 
-void IllegalModeHandler(int, void*);
 int  inKernelMode();
+void kernelModeCheck();
 int  getNewPid();
 void wrapperFunc();
 // for interrupts. 
@@ -108,7 +106,20 @@ void modInterrupt(int);
 void enableInterrupt();
 void disableInterrupt();
 int  currentInterruptStatus();
+// handlers
+void clockHandler(int dev, void *arg);
+void alarmHandler(int dev, void *arg);
+void termHandler(int dev, void  *arg);
+void diskHandler(int dev,  void *arg);
+void syscallHandler(int dev, void   *arg);
+void illegalHandler(int dev, void *arg);
+// device semaphores.   
+P1_Semaphore *clockSem;
+P1_Semaphore *alarmSem;
+P1_Semaphore *termSem;
+P1_Semaphore *diskSem;
 
+int tickLimit; /// used by our clock handler 
 /* -------------------------- Functions ----------------------------------- */
 /* ------------------------------------------------------------------------
    Name - dispatcher
@@ -170,16 +181,37 @@ void dispatcher()
    Returns - nothing
    Side Effects - lots, starts the whole thing
    ----------------------------------------------------------------------- */
+
 void startup(int argc, char **argv)
 {
+  // initialize semaphore count to 0.
+  semCount = 0;
+  tickLimit = 100/USLOSS_CLOCK_MS;
 
   /* initialize the process table here */
   
   /* Initialize the Ready list, Blocked list, etc. here */
-	readyQueue = pq_create();
+  readyQueue = pq_create();
   /* Initialize the interrupt vector here */
-	USLOSS_IntVec[USLOSS_ILLEGAL_INT] = IllegalModeHandler;
+  USLOSS_IntVec[USLOSS_CLOCK_INT]   = clockHandler;
+  USLOSS_IntVec[USLOSS_ALARM_INT]   = alarmHandler;
+  USLOSS_IntVec[USLOSS_DISK_INT]    = diskHandler;
+  USLOSS_IntVec[USLOSS_TERM_INT]    = termHandler;
+  USLOSS_IntVec[USLOSS_SYSCALL_INT] = syscallHandler;
+  USLOSS_IntVec[USLOSS_ILLEGAL_INT] = illegalHandler;
   /* Initialize the semaphores here */
+
+  //device semaphores
+  int semrc = 0; // retcodes for semaphore creation. 
+  semrc += P1_SemCreate("pseudoclock",0,clockSem);
+  semrc += P1_SemCreate("alarmSem",0,alarmSem);
+  semrc += P1_SemCreate("termSem",0,termSem);
+  semrc += P1_SemCreate("diskSem",0,diskSem);
+  if ( semrc != 0 ) 
+  { 
+    USLOSS_Console("STARTUP: error creating dev sems!\n");
+    USLOSS_Halt(1);
+  } 
 
   /* startup a sentinel process */
   pid = P1_Fork("sentinel", sentinel, NULL, USLOSS_MIN_STACK, 6, 0);
@@ -430,9 +462,6 @@ int P1_Join(int tag, int *status){
 	
 }
 
-
-
-
 /* ------------------------------------------------------------------------
    Name - P1_GetState
    Purpose - gets the state of the process
@@ -476,12 +505,6 @@ int sentinel (void *notused)
 } /* End of sentinel */
 
 
-/*----------------- Interupt Handlers -------------*/
-
-void IllegalModeHandler(int interupt, void *arg){
-	USLOSS_Console("Kernel Mode Required!\n");	
-	P1_Quit(-1);
-}
 
 
 
@@ -494,6 +517,15 @@ void IllegalModeHandler(int interupt, void *arg){
   */
 int inKernelMode() { 
 	return USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE;
+}
+
+void kernelModeCheck() 
+{ 
+  if (!inKernelMode()) 
+  { 
+    USLOSS_IllegalInstruction();
+  }
+  return;
 }
 
  // finds the first available PID. Used by fork to find pid for new process
@@ -771,3 +803,60 @@ int  currentInterruptStat()
 {
   return 0 ; 
 }
+
+
+int P1_WaitDevice(int type, int unit, int *status)i
+{
+  disableInterrupt();
+
+}
+
+// The handlers themselves.
+int clockCount =0;
+void clockHandler(int dev, void * arg)
+{
+  clockCount++;
+  if (clockCount == tickLimit)
+  {
+    clockCount = 0;
+    int result; int* totaltime;
+    //make sure device is ready
+    result = USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, totaltime);
+    if (result != USLOSS_DEV_OK)
+    { USLOSS_Console("CLOCK PROBLEM! BYE"); USLOSS_Halt(1);}
+    P1_V(clockSem);
+    dispatcher();
+  }
+  return;
+}
+
+void alarmHandler(int dev, void *arg)
+{
+  USLOSS_Console("implement me!\n");
+  return;
+}
+
+void diskHandler(int dev, void *arg)
+{
+  USLOSS_Console("implement me!\n");
+  return;
+}
+
+void termHandler(int dev, void * arg)
+{
+  USLOSS_Console("implement me!\n");
+  return;
+}
+
+void syscallHandler(int dev, void * arg)
+{
+  USLOSS_Console("implement me!\n");
+  return;
+}
+
+void illegalHandler(int interrupt, void *arg)
+{
+	USLOSS_Console("Kernel Mode Required! Goodbye!\n");
+    USLOSS_Halt(1);     
+}
+
